@@ -1,0 +1,4 @@
+node_modules/
+dist/
+.giviloop/
+.DS_Store

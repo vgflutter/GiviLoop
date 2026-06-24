@@ -1,0 +1,33 @@
+{
+  "name": "giviloop",
+  "version": "0.0.1",
+  "description": "External AI review loop for coding agents.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "givi": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepack": "npm run build",
+    "givi": "node dist/cli.js",
+    "mcp": "node dist/mcp-server.js",
+    "chatgpt:web": "node dist/playground-chatgpt-web.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "playwright": "^1.61.1"
+  }
+}
