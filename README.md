@@ -8,6 +8,18 @@ The point is simple: make external LLM review a repeatable local workflow instea
 
 > Current status: V0 prototype. Built for local personal workflows; not production-grade automation.
 
+## Why GiviLoop?
+
+When working with IDE coding agents, getting an external second opinion often turns into a copy/paste loop:
+
+agent summary -> external LLM review -> pasted feedback -> agent interpretation
+
+GiviLoop moves the mechanical packaging step out of the active agent conversation.
+
+It builds a local review or advisory package from git/files, sends it to an external LLM, saves the response locally, and lets the original agent analyze or act on it later.
+
+The goal is to keep the active agent focused on reasoning, implementation, and decisions, not on narrating local files to another chat.
+
 ## Demo
 
 ### IDE Agent Flow
