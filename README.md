@@ -26,8 +26,6 @@ The goal is to keep the active agent focused on reasoning, implementation, and d
 
 <video src="https://github.com/user-attachments/assets/6d294d9f-8ac4-4f4a-bbc7-fb0638b7f297" controls width="100%"></video>
 
-[Watch the IDE agent flow demo](https://github.com/user-attachments/assets/6d294d9f-8ac4-4f4a-bbc7-fb0638b7f297)
-
 ## Who Is This For?
 
 GiviLoop is for developers using IDE coding agents who want a controlled way to get a second opinion from an external LLM before accepting or applying changes.
@@ -87,8 +85,6 @@ Repository-level review:
 ### Console Flow Demo
 
 <video src="https://github.com/user-attachments/assets/53948c6a-f53c-491f-9759-bca404b0c92e" controls width="100%"></video>
-
-[Watch the console flow demo](https://github.com/user-attachments/assets/53948c6a-f53c-491f-9759-bca404b0c92e)
 
 Show help:
 
