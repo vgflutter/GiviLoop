@@ -1,7 +1,13 @@
 import { chromium, type BrowserContext, type Page } from "playwright";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { assertRepositoryAllowedForExternalTransfer } from "./external-transfer.js";
 
 export type ChatGptWebMode = "prefill" | "submit" | "auto";
 export type ChatGptModelSelection = "prefer" | "require";
@@ -35,6 +41,7 @@ export async function sendToChatGptWeb(
   options: ChatGptWebOptions,
 ): Promise<ChatGptWebResult> {
   const repositoryPath = path.resolve(options.repositoryPath);
+  assertRepositoryAllowedForExternalTransfer(repositoryPath);
 
   const requestPath =
     options.requestPath ??

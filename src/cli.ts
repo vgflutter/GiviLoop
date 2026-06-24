@@ -4,9 +4,11 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -25,6 +27,7 @@ const RUNS_DIR = path.join(GIVI_DIR, "runs");
 const LATEST_RUN_ID_PATH = path.join(GIVI_DIR, "latest-run-id");
 const REVIEW_PACKAGE_PATH = path.join(OUTBOX_DIR, "review-package.md");
 const CHATGPT_PROMPT_PATH = path.join(OUTBOX_DIR, "chatgpt-prompt.md");
+const CLAUDE_PROMPT_PATH = path.join(OUTBOX_DIR, "claude-prompt.md");
 const EXTERNAL_REVIEW_REQUEST_PATH = path.join(
   OUTBOX_DIR,
   "external-review-request.md",
@@ -34,7 +37,9 @@ const EXTERNAL_REVIEW_RESPONSE_PATH = path.join(
   "external-review-response.md",
 );
 const DEFAULT_MAX_FILE_SIZE_BYTES = 40_000;
+const DEFAULT_MAX_TOTAL_PACKAGE_BYTES = 400_000;
 const MAX_REVIEW_RUNS = 10;
+const RUN_ID_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[a-f0-9]{8}$/;
 
 type ReviewRun = {
   runId: string;
@@ -44,6 +49,18 @@ type ReviewRun = {
   responsePath: string;
 };
 
+type ContentBudget = {
+  remainingBytes: number;
+};
+
+type SafeRepositoryFile = {
+  absolutePath: string;
+  normalizedPath: string;
+  size: number;
+  skippedReason?: string;
+};
+
+type TargetProvider = "chatgpt-chat" | "claude-chat";
 type Command = "prepare" | "ask" | "copy" | "ingest" | "help";
 
 async function main(): Promise<void> {
@@ -90,7 +107,12 @@ async function ask(args: string[]): Promise<void> {
   const maxFileSizeBytes =
     readPositiveNumberOption(args, "--max-file-size-bytes") ??
     DEFAULT_MAX_FILE_SIZE_BYTES;
-  const attachedFiles = readAttachedFiles(args, maxFileSizeBytes);
+  const totalBudget = createContentBudget(
+    readPositiveNumberOption(args, "--max-total-package-bytes") ??
+      DEFAULT_MAX_TOTAL_PACKAGE_BYTES,
+  );
+  const targetProvider = readTargetProvider(args);
+  const attachedFiles = readAttachedFiles(args, maxFileSizeBytes, totalBudget);
   const prompt = buildAdvisoryQuestionPrompt(question, attachedFiles);
   const reviewRun = createReviewRun();
 
@@ -99,6 +121,7 @@ async function ask(args: string[]): Promise<void> {
   writeAdvisoryRunMetadata(reviewRun, {
     question,
     attachedFiles: attachedFiles.map((file) => file.path),
+    targetProvider,
     requestText: prompt,
   });
   writeFileSync(LATEST_RUN_ID_PATH, `${reviewRun.runId}\n`, "utf8");
@@ -111,6 +134,12 @@ async function ask(args: string[]): Promise<void> {
 
   if (!sendProvider) {
     return;
+  }
+
+  if (targetProvider !== "chatgpt-chat") {
+    throw new Error(
+      "Automated web sending is currently implemented only for chatgpt-chat/chatgpt-web. Use manual copy/ingest for claude-chat.",
+    );
   }
 
   if (sendProvider !== "chatgpt-web") {
@@ -155,6 +184,11 @@ function prepare(args: string[]): void {
   const maxFileSizeBytes =
     readPositiveNumberOption(args, "--max-file-size-bytes") ??
     DEFAULT_MAX_FILE_SIZE_BYTES;
+  const totalBudget = createContentBudget(
+    readPositiveNumberOption(args, "--max-total-package-bytes") ??
+      DEFAULT_MAX_TOTAL_PACKAGE_BYTES,
+  );
+  const targetProvider = readTargetProvider(args);
 
   ensureGiviDir();
   ensureGitRepository();
@@ -174,13 +208,14 @@ function prepare(args: string[]): void {
     .filter(Boolean);
 
   const diff = hasHead
-    ? buildTrackedDiff(trackedFiles, maxFileSizeBytes)
+    ? buildTrackedDiff(trackedFiles, maxFileSizeBytes, totalBudget)
     : "";
 
   const untrackedFiles = getUntrackedFiles();
   const untrackedContent = buildUntrackedContent(
     untrackedFiles,
     maxFileSizeBytes,
+    totalBudget,
   );
 
   const changedFilesSection = [
@@ -197,6 +232,7 @@ function prepare(args: string[]): void {
 - Created at: ${new Date().toISOString()}
 - Source: local git workspace
 - Generator: GiviLoop V0
+- Target provider: ${targetProvider}
 
 ## Goal
 
@@ -266,16 +302,19 @@ ${diff.trim() || "No tracked diff available."}
 ${untrackedContent || "No untracked file content included."}
 `;
 
-  const prompt = buildChatGptPrompt(content);
+  const prompt = buildProviderPrompt(targetProvider, content);
+  const providerPromptPath =
+    targetProvider === "claude-chat" ? CLAUDE_PROMPT_PATH : CHATGPT_PROMPT_PATH;
   const reviewRun = createReviewRun();
 
   writeFileSync(REVIEW_PACKAGE_PATH, content, "utf8");
-  writeFileSync(CHATGPT_PROMPT_PATH, prompt, "utf8");
+  writeFileSync(providerPromptPath, prompt, "utf8");
   writeFileSync(EXTERNAL_REVIEW_REQUEST_PATH, prompt, "utf8");
   writeFileSync(reviewRun.reviewPackagePath, content, "utf8");
   writeFileSync(reviewRun.requestPath, prompt, "utf8");
   writeReviewRunMetadata(reviewRun, {
     goal,
+    targetProvider,
     requestText: prompt,
   });
   writeFileSync(LATEST_RUN_ID_PATH, `${reviewRun.runId}\n`, "utf8");
@@ -283,7 +322,7 @@ ${untrackedContent || "No untracked file content included."}
 
   console.log(`Created ${reviewRun.runDir}`);
   console.log(`Created ${REVIEW_PACKAGE_PATH}`);
-  console.log(`Created ${CHATGPT_PROMPT_PATH}`);
+  console.log(`Created ${providerPromptPath}`);
   console.log(`Created ${EXTERNAL_REVIEW_REQUEST_PATH}`);
 }
 
@@ -311,20 +350,28 @@ function copyPrompt(args: string[]): void {
   }
 
   const reviewPackage = readFileSync(REVIEW_PACKAGE_PATH, "utf8");
+  const targetProvider = readTargetProvider(args);
+  const providerPromptPath =
+    targetProvider === "claude-chat" ? CLAUDE_PROMPT_PATH : CHATGPT_PROMPT_PATH;
 
-  const prompt = buildChatGptPrompt(reviewPackage);
+  const prompt = buildProviderPrompt(targetProvider, reviewPackage);
 
-  writeFileSync(CHATGPT_PROMPT_PATH, prompt, "utf8");
+  writeFileSync(providerPromptPath, prompt, "utf8");
   writeFileSync(EXTERNAL_REVIEW_REQUEST_PATH, prompt, "utf8");
   writeClipboard(prompt);
 
-  console.log(`Created ${CHATGPT_PROMPT_PATH}`);
+  console.log(`Created ${providerPromptPath}`);
   console.log(`Created ${EXTERNAL_REVIEW_REQUEST_PATH}`);
-  console.log("Copied ChatGPT review prompt to clipboard.");
+  console.log("Copied provider review prompt to clipboard.");
 }
 
-function buildChatGptPrompt(reviewPackage: string): string {
-  return `You are an external senior software reviewer.
+function buildProviderPrompt(
+  provider: TargetProvider,
+  reviewPackage: string,
+): string {
+  const providerName = provider === "claude-chat" ? "Claude" : "ChatGPT";
+
+  return `You are ${providerName}, acting as an external senior software reviewer.
 
 Review the following implementation package.
 Focus on logic, runtime risks, validation gaps, data consistency, edge cases, and maintainability.
@@ -444,11 +491,12 @@ function ingestReview(args: string[]): void {
 
   ensureGiviDir();
 
+  const targetProvider = readTargetProvider(args);
   const rawReview = readClipboard().trim();
 
   if (!rawReview) {
     throw new Error(
-      "Clipboard is empty. Copy the ChatGPT review first, then run: givi ingest",
+      "Clipboard is empty. Copy the provider review first, then run: givi ingest",
     );
   }
 
@@ -456,7 +504,7 @@ function ingestReview(args: string[]): void {
 
 ## Metadata
 
-- Provider: chatgpt-chat
+- Provider: ${targetProvider}
 - Mode: manual
 - Created at: ${new Date().toISOString()}
 
@@ -559,6 +607,23 @@ function readModelSelection(args: string[]): ChatGptModelSelection {
   return args.includes("--require-model") ? "require" : "prefer";
 }
 
+function readTargetProvider(args: string[]): TargetProvider {
+  const provider =
+    readOption(args, "--target-provider") ?? readOption(args, "--provider");
+
+  if (!provider) {
+    return "chatgpt-chat";
+  }
+
+  if (provider === "chatgpt-chat" || provider === "claude-chat") {
+    return provider;
+  }
+
+  throw new Error(
+    `Invalid target provider: ${provider}. Use chatgpt-chat or claude-chat.`,
+  );
+}
+
 function useRepository(args: string[]): void {
   const repositoryPath =
     readOption(args, "--repo") ?? readOption(args, "--repositoryPath");
@@ -625,6 +690,8 @@ function readLatestReviewRun(): ReviewRun | undefined {
     return undefined;
   }
 
+  assertValidRunId(runId);
+
   const runDir = path.join(RUNS_DIR, runId);
 
   if (!existsSync(runDir)) {
@@ -642,13 +709,13 @@ function readLatestReviewRun(): ReviewRun | undefined {
 
 function writeReviewRunMetadata(
   run: ReviewRun,
-  input: { goal: string; requestText: string },
+  input: { goal: string; targetProvider: TargetProvider; requestText: string },
 ): void {
   const metadata = {
     runId: run.runId,
     createdAt: new Date().toISOString(),
     mode: "git-only",
-    targetProvider: "chatgpt-chat",
+    targetProvider: input.targetProvider,
     goal: input.goal,
     files: {
       reviewPackagePath: run.reviewPackagePath,
@@ -667,13 +734,18 @@ function writeReviewRunMetadata(
 
 function writeAdvisoryRunMetadata(
   run: ReviewRun,
-  input: { question: string; attachedFiles: string[]; requestText: string },
+  input: {
+    question: string;
+    attachedFiles: string[];
+    targetProvider: TargetProvider;
+    requestText: string;
+  },
 ): void {
   const metadata = {
     runId: run.runId,
     createdAt: new Date().toISOString(),
     mode: "advisory-question",
-    targetProvider: "chatgpt-chat",
+    targetProvider: input.targetProvider,
     question: input.question,
     attachedFiles: input.attachedFiles,
     files: {
@@ -722,7 +794,11 @@ function gitCan(args: string[]): boolean {
   }
 }
 
-function buildTrackedDiff(files: string[], maxFileSizeBytes: number): string {
+function buildTrackedDiff(
+  files: string[],
+  maxFileSizeBytes: number,
+  totalBudget: ContentBudget,
+): string {
   return files
     .map((file) => {
       if (shouldOmitFileContent(file)) {
@@ -739,6 +815,15 @@ Skipped: tracked diff omitted because the path looks sensitive, generated, binar
         return `diff -- ${file}
 
 Skipped: tracked diff too large (${byteLength} bytes).
+`;
+      }
+
+      const budgetReason = tryConsumeBudget(totalBudget, byteLength);
+
+      if (budgetReason) {
+        return `diff -- ${file}
+
+Skipped: ${budgetReason}
 `;
       }
 
@@ -763,27 +848,33 @@ function getUntrackedFiles(): string[] {
 function buildUntrackedContent(
   files: string[],
   maxFileSizeBytes: number,
+  totalBudget: ContentBudget,
 ): string {
   return files
     .map((file) => {
       try {
-        const stats = statSync(file);
+        const safeFile = inspectRepositoryFile(process.cwd(), file);
 
-        if (!stats.isFile()) {
-          return "";
-        }
-
-        if (stats.size > maxFileSizeBytes) {
-          return `### ${file}
+        if (safeFile.skippedReason) {
+          return `### ${safeFile.normalizedPath}
 
 \`\`\`text
-Skipped: file too large (${stats.size} bytes).
+Skipped: ${safeFile.skippedReason}
 \`\`\`
 `;
         }
 
-        if (shouldOmitFileContent(file)) {
-          return `### ${file}
+        if (safeFile.size > maxFileSizeBytes) {
+          return `### ${safeFile.normalizedPath}
+
+\`\`\`text
+Skipped: file too large (${safeFile.size} bytes).
+\`\`\`
+`;
+        }
+
+        if (shouldOmitFileContent(safeFile.normalizedPath)) {
+          return `### ${safeFile.normalizedPath}
 
 \`\`\`text
 Skipped: file content omitted because it is sensitive, generated, binary, lockfile, or not useful for review.
@@ -791,9 +882,20 @@ Skipped: file content omitted because it is sensitive, generated, binary, lockfi
 `;
         }
 
-        const content = redactSecrets(readFileSync(file, "utf8"));
+        const budgetReason = tryConsumeBudget(totalBudget, safeFile.size);
 
-        return `### ${file}
+        if (budgetReason) {
+          return `### ${safeFile.normalizedPath}
+
+\`\`\`text
+Skipped: ${budgetReason}
+\`\`\`
+`;
+        }
+
+        const content = redactSecrets(readFileSync(safeFile.absolutePath, "utf8"));
+
+        return `### ${safeFile.normalizedPath}
 
 \`\`\`
 ${content}
@@ -815,6 +917,7 @@ Skipped: unable to read file.
 function readAttachedFiles(
   args: string[],
   maxFileSizeBytes: number,
+  totalBudget: ContentBudget,
 ): AdvisoryAttachedFile[] {
   const requestedFiles = [
     ...readOptions(args, "--file"),
@@ -838,36 +941,46 @@ function readAttachedFiles(
     const normalizedPath = relativePath.split(path.sep).join("/");
 
     try {
-      const stats = statSync(resolvedPath);
+      const safeFile = inspectRepositoryFile(process.cwd(), requestedFile);
 
-      if (!stats.isFile()) {
+      if (safeFile.skippedReason) {
         return {
-          path: normalizedPath,
+          path: safeFile.normalizedPath,
           content: "",
-          skippedReason: "path is not a file.",
+          skippedReason: safeFile.skippedReason,
         };
       }
 
-      if (stats.size > maxFileSizeBytes) {
+      if (safeFile.size > maxFileSizeBytes) {
         return {
-          path: normalizedPath,
+          path: safeFile.normalizedPath,
           content: "",
-          skippedReason: `file too large (${stats.size} bytes).`,
+          skippedReason: `file too large (${safeFile.size} bytes).`,
         };
       }
 
-      if (shouldOmitFileContent(normalizedPath)) {
+      if (shouldOmitFileContent(safeFile.normalizedPath)) {
         return {
-          path: normalizedPath,
+          path: safeFile.normalizedPath,
           content: "",
           skippedReason:
             "file content omitted because it is sensitive, generated, binary, lockfile, or not useful for review.",
         };
       }
 
+      const budgetReason = tryConsumeBudget(totalBudget, safeFile.size);
+
+      if (budgetReason) {
+        return {
+          path: safeFile.normalizedPath,
+          content: "",
+          skippedReason: budgetReason,
+        };
+      }
+
       return {
-        path: normalizedPath,
-        content: redactSecrets(readFileSync(resolvedPath, "utf8")),
+        path: safeFile.normalizedPath,
+        content: redactSecrets(readFileSync(safeFile.absolutePath, "utf8")),
       };
     } catch {
       return {
@@ -877,6 +990,96 @@ function readAttachedFiles(
       };
     }
   });
+}
+
+function createContentBudget(maxBytes: number): ContentBudget {
+  return {
+    remainingBytes: maxBytes,
+  };
+}
+
+function tryConsumeBudget(
+  budget: ContentBudget,
+  byteLength: number,
+): string | undefined {
+  if (byteLength <= budget.remainingBytes) {
+    budget.remainingBytes -= byteLength;
+    return undefined;
+  }
+
+  return `package content budget exhausted (${byteLength} bytes requested, ${budget.remainingBytes} bytes remaining).`;
+}
+
+function inspectRepositoryFile(
+  repositoryPath: string,
+  requestedFile: string,
+): SafeRepositoryFile {
+  const absolutePath = path.resolve(repositoryPath, requestedFile);
+  const relativePath = path.relative(repositoryPath, absolutePath);
+
+  if (
+    relativePath === "" ||
+    relativePath.startsWith("..") ||
+    path.isAbsolute(relativePath)
+  ) {
+    throw new Error(`File must be inside the repository: ${requestedFile}`);
+  }
+
+  const normalizedPath = relativePath.split(path.sep).join("/");
+  const stats = lstatSync(absolutePath);
+
+  if (stats.isSymbolicLink()) {
+    return {
+      absolutePath,
+      normalizedPath,
+      size: stats.size,
+      skippedReason:
+        "path is a symbolic link; content omitted to keep review packages inside the repository.",
+    };
+  }
+
+  if (!stats.isFile()) {
+    return {
+      absolutePath,
+      normalizedPath,
+      size: stats.size,
+      skippedReason: "path is not a file.",
+    };
+  }
+
+  const repositoryRealPath = realpathSync(repositoryPath);
+  const fileRealPath = realpathSync(absolutePath);
+
+  if (!isPathInside(repositoryRealPath, fileRealPath)) {
+    return {
+      absolutePath,
+      normalizedPath,
+      size: stats.size,
+      skippedReason:
+        "resolved path is outside the repository; content omitted.",
+    };
+  }
+
+  return {
+    absolutePath,
+    normalizedPath,
+    size: stats.size,
+  };
+}
+
+function isPathInside(parentPath: string, childPath: string): boolean {
+  const relativePath = path.relative(parentPath, childPath);
+
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
+  );
+}
+
+function assertValidRunId(runId: string): void {
+  if (!RUN_ID_PATTERN.test(runId)) {
+    throw new Error(`Invalid GiviLoop run id: ${runId}`);
+  }
 }
 
 function shouldOmitFileContent(file: string): boolean {
@@ -920,13 +1123,18 @@ function shouldOmitFileContent(file: string): boolean {
 function redactSecrets(value: string): string {
   return value
     .replace(
-      /(api[_-]?key|token|secret|password|passwd|pwd)(\s*[:=]\s*)["']?[^"'\s]+/gi,
-      "$1$2[REDACTED]",
+      /(["']?(?:api[_-]?key|token|secret|password|passwd|pwd)["']?\s*[:=]\s*)["']?[^"',\s}]+/gi,
+      "$1[REDACTED]",
     )
     .replace(
-      /(DATABASE_URL|REDIS_URL|POSTGRES_URL|MYSQL_URL)(\s*[:=]\s*)["']?[^"'\s]+/g,
-      "$1$2[REDACTED]",
+      /(["']?(?:DATABASE_URL|REDIS_URL|POSTGRES_URL|MYSQL_URL)["']?\s*[:=]\s*)["']?[^"',\s}]+/g,
+      "$1[REDACTED]",
     )
+    .replace(/(authorization\s*:\s*bearer\s+)[^\s]+/gi, "$1[REDACTED]")
+    .replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, "[REDACTED_AWS_ACCESS_KEY_ID]")
+    .replace(/\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g, "gh[REDACTED]")
+    .replace(/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, "github_pat_[REDACTED]")
+    .replace(/\bnpm_[A-Za-z0-9]{36,}\b/g, "npm_[REDACTED]")
     .replace(/sk-[A-Za-z0-9_-]{20,}/g, "sk-[REDACTED]")
     .replace(
       /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
@@ -1061,12 +1269,16 @@ Important options:
   --question TEXT           Advisory question for givi ask.
   --goal TEXT               Goal/context for givi prepare.
   --file PATH               Attach a repository-local file to givi ask. Can be repeated.
+  --target-provider chatgpt-chat|claude-chat
+                            Generate provider-specific manual prompts. Defaults to chatgpt-chat.
   --send chatgpt-web        Send the generated request to ChatGPT web.
   --mode prefill|submit|auto
                             prefill only fills the prompt; submit sends it; auto waits and saves the answer.
   --model LABEL             Request a provider-specific web UI model label.
   --require-model           Fail if the requested web UI model cannot be selected.
   --max-file-size-bytes N   Skip attached/untracked/tracked content larger than N bytes.
+  --max-total-package-bytes N
+                            Skip additional included content after the package budget is exhausted.
 
 After an auto run, ask your IDE agent:
   Use GiviLoop to read the saved external review for this repository with reviewResponseMode act.

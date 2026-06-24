@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && node --test test/*.test.mjs",
     "prepack": "npm run build",
     "givi": "node dist/cli.js",
     "mcp": "node dist/mcp-server.js",

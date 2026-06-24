@@ -106,6 +106,11 @@ Send the latest prepared request:
 
     npm --prefix /path/to/GiviLoop run chatgpt:web -- --repo /path/to/repo --mode auto
 
+Prepare a Claude manual-review prompt:
+
+    npm --prefix /path/to/GiviLoop run givi -- prepare --repo /path/to/repo --goal "Review the current implementation" --target-provider claude-chat
+    npm --prefix /path/to/GiviLoop run givi -- copy --repo /path/to/repo
+
 Manual fallback:
 
     npm --prefix /path/to/GiviLoop run givi -- prepare --repo /path/to/repo --goal "Review the current implementation"
@@ -147,11 +152,11 @@ It can contain prompts, repository context, review packages, run metadata, and e
 Implemented now:
 
 - ChatGPT prompt generation
+- Claude prompt generation for manual and MCP flows
 - ChatGPT web automation through Playwright
 
 Planned:
 
-- Claude prompt generation
 - Claude web automation
 
 Web model selection is best-effort because provider UIs change. You can request a model label, and you can require selection to succeed when that matters.
@@ -188,6 +193,8 @@ Use it only with repositories and providers you are comfortable sending to an ex
 Use provider web automation only if it is allowed by the provider terms and by the account or workspace policies that apply to you.
 
 Before sending code or context to an external provider, make sure that doing so is allowed by your organization, client agreements, confidentiality obligations, and the provider terms that apply to your account.
+
+Optional hardening: set `GIVILOOP_ALLOWED_REPOSITORIES` to a path-delimited list of repository roots that may be sent through web LLM automation.
 
 You are responsible for deciding what can be shared externally. GiviLoop helps package and transmit content; it does not decide whether that transfer is permitted.
 
