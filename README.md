@@ -32,10 +32,11 @@ GiviLoop is for developers using IDE coding agents who want a controlled way to 
 
 ## What It Does
 
-GiviLoop currently supports three main workflows:
+GiviLoop currently supports four workflows:
 
-- review local git changes;
+- send a tracked-file source archive to ChatGPT web and save the review;
 - ask an external LLM about a specific file or code pattern;
+- review local git changes only;
 - bring the saved external response back to the IDE agent for analysis or action.
 
 External responses are advisory. The IDE agent should evaluate the answer critically before changing code.
@@ -46,9 +47,10 @@ Requirements:
 
 - Node.js 20 or newer
 - Google Chrome for web automation
+- zip for source-archive creation
 - A logged-in web LLM session in the browser profile opened by GiviLoop
 
-Recommended first step: run the web bridge once, log in manually to the target LLM provider in the Playwright/Chrome window that GiviLoop opens, then rerun the command. GiviLoop reuses that local browser profile for later requests.
+Recommended first step: run one `--send chatgpt-web --mode auto` command once, log in manually to ChatGPT in the Playwright/Chrome window that GiviLoop opens, then rerun the command. GiviLoop reuses that local browser profile for later requests.
 
 Install and build:
 
@@ -77,7 +79,7 @@ Focused review without edits:
 
 Repository-level review:
 
-    Use GiviLoop to prepare a git-only external review for this repository, send it to chatgpt-web in auto mode, then analyze the response only.
+    Use GiviLoop to create a tracked-file source archive for this repository, send it to ChatGPT web in auto mode, then analyze the saved response only.
     Do not modify files.
 
 ## Console Usage
@@ -90,17 +92,32 @@ Show help:
 
     npm --prefix /path/to/GiviLoop run givi -- help
 
-Ask about one file and send it to ChatGPT web:
+Recommended repository review:
+
+    GIVILOOP_ALLOWED_REPOSITORIES=/path/to/repo \
+    npm --prefix /path/to/GiviLoop run givi -- archive \
+      --repo /path/to/repo \
+      --goal "Review the current implementation" \
+      --send chatgpt-web \
+      --mode auto \
+      --no-untracked
+
+This creates a small source zip from tracked Git files, embeds the manifest in the prompt, uploads the zip to ChatGPT web, sends the request, and saves the answer.
+
+Ask about one file:
 
     npm --prefix /path/to/GiviLoop run givi -- ask --repo /path/to/repo --file server.js --question "Review the refund endpoint pattern in server.js. Suggest only minimal safe fixes." --send chatgpt-web --mode auto
 
-Prepare a git review package:
+Advanced diff-only review:
 
     npm --prefix /path/to/GiviLoop run givi -- prepare --repo /path/to/repo --goal "Review the current implementation"
+    npm --prefix /path/to/GiviLoop run givi -- send --repo /path/to/repo --mode auto
 
-Send the latest prepared request:
+Manual source archive fallback:
 
-    npm --prefix /path/to/GiviLoop run chatgpt:web -- --repo /path/to/repo --mode auto
+    npm --prefix /path/to/GiviLoop run givi -- archive --repo /path/to/repo --goal "Review the current implementation"
+    npm --prefix /path/to/GiviLoop run givi -- copy --repo /path/to/repo
+    # paste the prompt and attach .giviloop/runs/<run-id>/source-context.zip and source-manifest.json to the provider chat
 
 Prepare a Claude manual-review prompt:
 
@@ -121,6 +138,18 @@ After an auto run, ask your IDE agent:
 
 Use reviewResponseMode analyze-only when you want a summary without edits.
 
+## Command Orchestration
+
+GiviLoop commands share one run model under `.giviloop/runs/<run-id>/`.
+
+- `archive` is the recommended repository-level entry point. It creates `source-context.zip`, `source-manifest.json`, `external-review-request.md`, and metadata. With `--send chatgpt-web --mode auto`, it uploads the zip, sends the request, and saves the response in the same run.
+- `ask` is the focused advisory path. It creates a question run, optionally includes specific files, sends it when `--send chatgpt-web` is present, and saves the response.
+- `prepare` is the advanced diff-only path. It creates a review package from git diff and untracked files, but does not send it by itself.
+- `send` sends the latest prepared run to ChatGPT web. If the latest run is a source archive, it automatically attaches `source-context.zip`.
+- `copy` and `ingest` are the manual fallback pair. Use them for Claude today, provider UI issues, or cases where you want to paste and review before sending.
+
+Provider targeting is intentionally conservative: automated web sending currently supports `chatgpt-chat` through `chatgpt-web`. Claude prompts are generated for manual review until Claude web automation is implemented.
+
 ## Output Files
 
 GiviLoop stores local run data under .giviloop/.
@@ -129,9 +158,12 @@ Each run contains:
 
 - metadata.json
 - external-review-request.md
-- external-review-response.md
+
+Runs sent in `auto` mode also contain external-review-response.md.
 
 Review-package runs also include review-package.md.
+
+Source-archive runs also include source-context.zip and source-manifest.json. With `--send chatgpt-web --mode auto`, GiviLoop attaches the zip to ChatGPT web automatically, includes the manifest inline in the prompt, sends the request, and saves the response.
 
 The latest run id is stored in .giviloop/latest-run-id.
 
@@ -169,6 +201,8 @@ Most users should use natural-language IDE prompts, but the MCP tools are:
 - givi_read_external_review
 - givi_ask_web_llm
 
+Source archive creation is currently CLI-first. Use `givi archive --send chatgpt-web --mode auto` for that flow. MCP web-send tools can still send an existing source-archive run because they read the run metadata and attach `source-context.zip` automatically.
+
 The important response modes are:
 
 - analyze-only: summarize and triage without editing files
@@ -180,9 +214,11 @@ GiviLoop is independent and is not affiliated with OpenAI, Anthropic, or any ext
 
 GiviLoop can send repository content to an external provider.
 
-Review packages may include git diffs, untracked files, repository metadata, explicit file attachments, prompts, and optional IDE conversation context.
+Review packages may include git diffs, untracked files, repository metadata, explicit file attachments, source archives, prompts, and optional IDE conversation context.
 
 The prototype has basic omission and redaction rules for common sensitive files and secret-like values, but it is not a real secret scanner.
+
+Source archives use git's exclude rules by default and omit common generated, binary, lockfile, credential, and symlink paths. Archive file contents are not line-by-line redacted, so do not archive repositories that contain secrets in tracked source files.
 
 Use it only with repositories and providers you are comfortable sending to an external LLM.
 
@@ -204,9 +240,9 @@ Run the MCP server:
 
     npm run mcp
 
-Run the ChatGPT web bridge:
+Send the latest prepared request to ChatGPT web:
 
-    npm --prefix /path/to/GiviLoop run chatgpt:web -- --repo /path/to/repo --mode auto
+    npm --prefix /path/to/GiviLoop run givi -- send --repo /path/to/repo --mode auto
 
 ## License
 

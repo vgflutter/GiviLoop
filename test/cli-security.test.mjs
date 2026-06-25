@@ -20,6 +20,7 @@ const repoRoot = path.resolve(
 const distDir =
   process.env.GIVILOOP_TEST_DIST_DIR ?? path.join(repoRoot, "dist");
 const cliPath = path.join(distDir, "cli.js");
+const hasZipTools = commandAvailable("zip") && commandAvailable("unzip");
 
 test("prepare omits untracked symlink content outside the repository", () => {
   const repo = createTempGitRepo();
@@ -206,6 +207,46 @@ test("send refuses repositories outside GIVILOOP_ALLOWED_REPOSITORIES", () => {
   rmSync(repo, { recursive: true, force: true });
 });
 
+test("send explains how to create a request when no run exists", () => {
+  const repo = createTempGitRepo();
+
+  const result = spawnSync(process.execPath, [cliPath, "send", "--repo", repo], {
+    encoding: "utf8",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /No prepared GiviLoop request found/);
+  assert.match(result.stderr, /givi prepare/);
+  assert.match(result.stderr, /givi archive/);
+
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("send refuses a Claude-targeted prepared request before web automation", () => {
+  const repo = createTempGitRepo();
+
+  execFileSync(process.execPath, [
+    cliPath,
+    "prepare",
+    "--repo",
+    repo,
+    "--goal",
+    "claude send guard test",
+    "--target-provider",
+    "claude-chat",
+  ]);
+
+  const result = spawnSync(process.execPath, [cliPath, "send", "--repo", repo], {
+    encoding: "utf8",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Latest request targets claude-chat/);
+  assert.match(result.stderr, /givi copy\/ingest/);
+
+  rmSync(repo, { recursive: true, force: true });
+});
+
 test("prepare can generate a Claude manual-review prompt", () => {
   const repo = createTempGitRepo();
 
@@ -251,6 +292,77 @@ test("prepare can generate a Claude manual-review prompt", () => {
   rmSync(repo, { recursive: true, force: true });
 });
 
+test(
+  "archive creates a source zip and manifest from git-visible files",
+  { skip: hasZipTools ? false : "zip and unzip are required for archive tests" },
+  () => {
+    const repo = createTempGitRepo();
+    const outside = path.join(os.tmpdir(), `giviloop-archive-outside-${process.pid}.txt`);
+
+    writeFileSync(path.join(repo, ".gitignore"), "ignored.txt\nignored-dir/\n", "utf8");
+    execFileSync("git", ["add", ".gitignore"], { cwd: repo });
+    execFileSync("git", ["commit", "-m", "ignore fixtures"], {
+      cwd: repo,
+      stdio: "ignore",
+    });
+
+    writeFileSync(path.join(repo, "included-untracked.ts"), "export const ok = true;\n", "utf8");
+    writeFileSync(path.join(repo, "ignored.txt"), "ignored\n", "utf8");
+    writeFileSync(path.join(repo, "package-lock.json"), "{}\n", "utf8");
+    execFileSync("git", ["add", "package-lock.json"], { cwd: repo });
+    execFileSync("git", ["commit", "-m", "tracked lockfile"], {
+      cwd: repo,
+      stdio: "ignore",
+    });
+    writeFileSync(outside, "SHOULD_NOT_ARCHIVE\n", "utf8");
+    symlinkSync(outside, path.join(repo, "outside-link.txt"));
+
+    execFileSync(process.execPath, [
+      cliPath,
+      "archive",
+      "--repo",
+      repo,
+      "--goal",
+      "archive test",
+      "--target-provider",
+      "claude-chat",
+    ]);
+
+    const runId = readFileSync(
+      path.join(repo, ".giviloop", "latest-run-id"),
+      "utf8",
+    ).trim();
+    const runDir = path.join(repo, ".giviloop", "runs", runId);
+    const archivePath = path.join(runDir, "source-context.zip");
+    const manifestPath = path.join(runDir, "source-manifest.json");
+    const requestPath = path.join(runDir, "external-review-request.md");
+    const archiveEntries = execFileSync("unzip", ["-Z1", archivePath], {
+      encoding: "utf8",
+    })
+      .split("\n")
+      .filter(Boolean);
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    const skippedPaths = manifest.files.skipped.map((file) => file.path);
+
+    assert.equal(existsSync(archivePath), true);
+    assert.equal(existsSync(manifestPath), true);
+    assert.ok(archiveEntries.includes("tracked.txt"));
+    assert.ok(archiveEntries.includes(".gitignore"));
+    assert.ok(archiveEntries.includes("included-untracked.ts"));
+    assert.equal(archiveEntries.includes("ignored.txt"), false);
+    assert.equal(archiveEntries.includes("package-lock.json"), false);
+    assert.equal(archiveEntries.includes("outside-link.txt"), false);
+    assert.ok(skippedPaths.includes("ignored.txt"));
+    assert.ok(skippedPaths.includes("package-lock.json"));
+    assert.ok(skippedPaths.includes("outside-link.txt"));
+    assert.equal(manifest.targetProvider, "claude-chat");
+    assert.match(readFileSync(requestPath, "utf8"), /You are Claude/);
+
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(outside, { force: true });
+  },
+);
+
 function createTempGitRepo() {
   const repo = mkdtempSync(path.join(os.tmpdir(), "giviloop-test-"));
 
@@ -268,4 +380,13 @@ function createTempGitRepo() {
   });
 
   return repo;
+}
+
+function commandAvailable(command) {
+  const result = spawnSync(command, ["--help"], {
+    encoding: "utf8",
+    stdio: "ignore",
+  });
+
+  return !result.error;
 }

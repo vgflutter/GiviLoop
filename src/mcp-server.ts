@@ -162,7 +162,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: TOOL_PREPARE_FROM_GIT,
         description:
-          "Cheap/default mode. Prepare an external AI review package using only the local repository git diff and untracked files. Do not pass or summarize IDE conversation context. Use this by default when the user asks for an external review package and does not explicitly ask to include the IDE chat context.",
+          "Diff-only MCP mode. Prepare an external AI review package using only the local repository git diff and untracked files. Do not pass or summarize IDE conversation context. Use this when the user wants an MCP-based review of current changes rather than the CLI source-archive flow.",
         inputSchema: {
           type: "object",
           properties: {
@@ -264,7 +264,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: TOOL_SEND_TO_WEB_LLM,
         description:
-          "Launch a local web LLM bridge for an already prepared GiviLoop review request. Use webProvider to choose the web UI; chatgpt-web is implemented first, claude-web is reserved for the Claude web bridge.",
+          "Launch a local web LLM bridge for an already prepared GiviLoop review request. If the selected run is a source archive, attach its source-context.zip automatically. Use webProvider to choose the web UI; chatgpt-web is implemented first, claude-web is reserved for the Claude web bridge.",
         inputSchema: {
           type: "object",
           properties: {
@@ -318,14 +318,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: TOOL_SEND_TO_CHATGPT_WEB,
         description:
-          "Compatibility alias for givi_send_to_web_llm with webProvider=chatgpt-web. This is the MCP equivalent of running `npm run chatgpt:web -- --repo <repositoryPath> --mode <mode>`.",
+          "Compatibility alias for givi_send_to_web_llm with webProvider=chatgpt-web. This is the MCP equivalent of running `givi send --repo <repositoryPath> --mode <mode>`.",
         inputSchema: {
           type: "object",
           properties: {
             repositoryPath: {
               type: "string",
               description:
-                "Absolute path of the repository containing .giviloop/outbox/external-review-request.md or .giviloop/outbox/chatgpt-prompt.md.",
+                "Absolute path of the repository containing a prepared GiviLoop request. Source-archive runs attach source-context.zip automatically.",
             },
             mode: {
               type: "string",
@@ -541,9 +541,8 @@ function buildHelpToolResponse(): {
           "",
           "Recommended IDE-agent flows:",
           "",
-          "1. Review local git changes",
-          "- Use givi_prepare_from_git when the user wants an external review of the current repository state without including chat context.",
-          "- Then use givi_send_to_web_llm with webProvider=chatgpt-web and mode=auto to send the prepared request.",
+          "1. Recommended repository review",
+          "- For a full tracked-file source archive, use the CLI-first flow: givi archive --repo /path/to/repo --goal \"Review the current implementation\" --send chatgpt-web --mode auto --no-untracked.",
           "- Then use givi_read_external_review with reviewResponseMode=analyze-only or act.",
           "",
           "2. Review a specific file or pattern",
@@ -560,9 +559,10 @@ function buildHelpToolResponse(): {
           "- act: treat the external review as advisory, apply only sensible fixes, run checks, and report accepted/rejected suggestions.",
           "",
           "Console equivalents:",
+          "- Recommended repository review: npm --prefix /path/to/GiviLoop run givi -- archive --repo /path/to/repo --goal \"Review the current implementation\" --send chatgpt-web --mode auto --no-untracked",
           "- Ask about one file: npm --prefix /path/to/GiviLoop run givi -- ask --repo /path/to/repo --file server.js --question \"Review this endpoint pattern\" --send chatgpt-web --mode auto",
-          "- Prepare git review: npm --prefix /path/to/GiviLoop run givi -- prepare --repo /path/to/repo --goal \"Review the current implementation\"",
-          "- Send prepared request: npm --prefix /path/to/GiviLoop run chatgpt:web -- --repo /path/to/repo --mode auto",
+          "- Advanced diff-only review: npm --prefix /path/to/GiviLoop run givi -- prepare --repo /path/to/repo --goal \"Review the current implementation\"",
+          "- Send latest prepared request: npm --prefix /path/to/GiviLoop run givi -- send --repo /path/to/repo --mode auto",
           "",
           "Safety:",
           "- GiviLoop may send repository content, explicit file attachments, prompts, and optional IDE context to an external provider.",
@@ -594,7 +594,7 @@ function buildToolResponse(result: PrepareResult): {
           `Copied to clipboard: ${result.copiedToClipboard ? "yes" : "no"}`,
           "",
           "Next step:",
-          "Open the provider chat, paste the generated prompt, copy the review response, then import it into GiviLoop.",
+          "Use givi_send_to_web_llm with webProvider=chatgpt-web and mode=auto, or use copy/ingest for a manual provider flow.",
         ].join("\n"),
       },
     ],
@@ -683,6 +683,7 @@ async function askWebLlm(args: AskWebLlmArgs): Promise<{
   repositoryPath: string;
   webProvider: WebProvider;
   requestPath: string;
+  attachmentPaths: string[];
   responsePath?: string;
   responseText?: string;
   mode: WebDeliveryMode;
@@ -757,6 +758,7 @@ async function askWebLlm(args: AskWebLlmArgs): Promise<{
     repositoryPath,
     webProvider,
     requestPath: result.requestPath,
+    attachmentPaths: result.attachmentPaths,
     responsePath: result.responsePath,
     responseText: result.responseText,
     mode: result.mode,
@@ -772,6 +774,7 @@ async function sendPreparedReviewToWebLlm(
   repositoryPath: string;
   webProvider: WebProvider;
   requestPath: string;
+  attachmentPaths: string[];
   responsePath?: string;
   responseText?: string;
   mode: WebDeliveryMode;
@@ -813,11 +816,24 @@ async function sendPreparedReviewToWebLlm(
     externalReviewRequestPath,
   });
 
+  const metadata = selectedRun ? readReviewRunMetadata(selectedRun) : undefined;
+  const targetProvider = readMetadataString(metadata, "targetProvider");
+
+  if (targetProvider && targetProvider !== "chatgpt-chat") {
+    throw new Error(
+      `Selected request targets ${targetProvider}. Automated web sending currently supports chatgpt-chat only. Use manual copy/ingest for this run or create a chatgpt-chat request.`,
+    );
+  }
+
+  const attachmentPaths = selectedRun
+    ? readPreparedRunAttachmentPaths(selectedRun, metadata)
+    : [];
   const mode = args.mode ?? "prefill";
   const result = await sendToChatGptWeb({
     repositoryPath,
     requestPath: externalReviewRequestPath,
     responsePath: externalReviewResponsePath,
+    attachmentPaths,
     mode,
     model: args.model,
     modelSelection: args.modelSelection,
@@ -835,6 +851,7 @@ async function sendPreparedReviewToWebLlm(
     repositoryPath,
     webProvider,
     requestPath: result.requestPath,
+    attachmentPaths: result.attachmentPaths,
     responsePath: result.responsePath,
     responseText: result.responseText,
     mode: result.mode,
@@ -848,6 +865,7 @@ function buildWebLlmToolResponse(result: {
   repositoryPath: string;
   webProvider: WebProvider;
   requestPath: string;
+  attachmentPaths: string[];
   responsePath?: string;
   responseText?: string;
   mode: WebDeliveryMode;
@@ -880,6 +898,9 @@ function buildWebLlmToolResponse(result: {
             : undefined,
           `Review response handling: ${result.reviewResponseMode}`,
           `Request: ${result.requestPath}`,
+          result.attachmentPaths.length > 0
+            ? `Attachments: ${result.attachmentPaths.join(", ")}`
+            : undefined,
           result.responsePath ? `Response: ${result.responsePath}` : undefined,
           "",
           buildExternalReviewHandlingInstructions(result.reviewResponseMode),
@@ -1824,7 +1845,7 @@ function ensureExternalReviewRequest(input: {
         `Expected: ${input.externalReviewRequestPath}`,
         `Fallback not found: ${input.legacyChatGptPromptPath}`,
         "",
-        "Generate it first with a GiviLoop MCP prepare/ask tool, givi prepare, or givi ask.",
+        "Generate it first with a GiviLoop MCP prepare/ask tool, givi archive, givi prepare, or givi ask.",
       ].join("\n"),
     );
   }
@@ -1985,6 +2006,61 @@ function readLatestReviewRun(repositoryPath: string): ReviewRun | undefined {
     requestPath: path.join(runDir, "external-review-request.md"),
     responsePath: path.join(runDir, "external-review-response.md"),
   };
+}
+
+function readReviewRunMetadata(
+  run: ReviewRun,
+): Record<string, unknown> | undefined {
+  const metadataPath = path.join(run.runDir, "metadata.json");
+
+  if (!existsSync(metadataPath)) {
+    return undefined;
+  }
+
+  const metadata = JSON.parse(readFileSync(metadataPath, "utf8")) as unknown;
+
+  if (
+    typeof metadata !== "object" ||
+    metadata === null ||
+    Array.isArray(metadata)
+  ) {
+    return undefined;
+  }
+
+  return metadata as Record<string, unknown>;
+}
+
+function readMetadataString(
+  metadata: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  const value = metadata?.[key];
+
+  return typeof value === "string" ? value : undefined;
+}
+
+function readPreparedRunAttachmentPaths(
+  run: ReviewRun,
+  metadata: Record<string, unknown> | undefined,
+): string[] {
+  const sourceArchivePath = path.join(run.runDir, "source-context.zip");
+  const runMode = readMetadataString(metadata, "mode");
+
+  if (runMode === "source-archive") {
+    if (!existsSync(sourceArchivePath)) {
+      throw new Error(
+        `Selected run is a source archive, but the zip is missing: ${sourceArchivePath}`,
+      );
+    }
+
+    return [sourceArchivePath];
+  }
+
+  if (!runMode && existsSync(sourceArchivePath)) {
+    return [sourceArchivePath];
+  }
+
+  return [];
 }
 
 function readReviewRunById(repositoryPath: string, runId: string): ReviewRun {

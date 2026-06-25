@@ -16,6 +16,7 @@ export type ChatGptWebOptions = {
   repositoryPath: string;
   requestPath?: string;
   responsePath?: string;
+  attachmentPaths?: string[];
   mode?: ChatGptWebMode;
   model?: string;
   modelSelection?: ChatGptModelSelection;
@@ -28,6 +29,7 @@ export type ChatGptWebOptions = {
 export type ChatGptWebResult = {
   mode: ChatGptWebMode;
   requestPath: string;
+  attachmentPaths: string[];
   responsePath?: string;
   responseText?: string;
   modelSelectionWarning?: string;
@@ -73,6 +75,15 @@ export async function sendToChatGptWeb(
     throw new Error(`Request file is empty: ${requestPath}`);
   }
 
+  const attachmentPaths = (options.attachmentPaths ?? []).map((attachmentPath) =>
+    path.resolve(attachmentPath),
+  );
+  for (const attachmentPath of attachmentPaths) {
+    if (!existsSync(attachmentPath)) {
+      throw new Error(`Attachment file not found: ${attachmentPath}`);
+    }
+  }
+
   const userDataDir =
     options.userDataDir ??
     path.join(os.homedir(), ".giviloop", "browser-profiles", "chatgpt");
@@ -107,12 +118,16 @@ export async function sendToChatGptWeb(
       await waitForChatInput(page);
     }
 
+    if (attachmentPaths.length > 0) {
+      await uploadAttachments(page, attachmentPaths);
+    }
     await fillChatInput(page, requestText);
 
     if (mode === "prefill") {
       return {
         mode,
         requestPath,
+        attachmentPaths,
         modelSelectionWarning,
       };
     }
@@ -125,6 +140,7 @@ export async function sendToChatGptWeb(
       return {
         mode,
         requestPath,
+        attachmentPaths,
         modelSelectionWarning,
       };
     }
@@ -140,6 +156,7 @@ export async function sendToChatGptWeb(
     return {
       mode,
       requestPath,
+      attachmentPaths,
       responsePath,
       responseText,
       modelSelectionWarning,
@@ -149,6 +166,119 @@ export async function sendToChatGptWeb(
       await context.close();
     }
   }
+}
+
+async function uploadAttachments(
+  page: Page,
+  attachmentPaths: string[],
+): Promise<void> {
+  const attachSelectors = [
+    '[data-testid="composer-plus-btn"]',
+    'button[aria-label="Add photos and files"]',
+    'button[aria-label="Allega file"]',
+    'button[aria-label*="Attach"]',
+    'button[aria-label*="Allega"]',
+    'button:has-text("Attach")',
+    'button:has-text("Allega")',
+  ];
+
+  for (const selector of attachSelectors) {
+    const button = page.locator(selector).first();
+
+    try {
+      await button.waitFor({ state: "visible", timeout: 1_200 });
+      const fileChooser = await openAttachmentFileChooser(page, button);
+      await fileChooser.setFiles(attachmentPaths);
+      await waitForUploadedAttachmentNames(page, attachmentPaths);
+      return;
+    } catch {
+      // try next selector
+    }
+  }
+
+  const fileInput = page.locator('input[type="file"]').last();
+
+  try {
+    await fileInput.setInputFiles(attachmentPaths, { timeout: 10_000 });
+    await waitForUploadedAttachmentNames(page, attachmentPaths);
+    return;
+  } catch {
+    // handled below
+  }
+
+  throw new Error(
+    "Unable to attach files in ChatGPT. The web UI may have changed or file upload may not be available for this chat.",
+  );
+}
+
+async function openAttachmentFileChooser(
+  page: Page,
+  button: ReturnType<Page["locator"]>,
+) {
+  const directChooser = page
+    .waitForEvent("filechooser", { timeout: 1_500 })
+    .catch(() => null);
+  await button.click();
+
+  const directFileChooser = await directChooser;
+  if (directFileChooser) {
+    return directFileChooser;
+  }
+
+  const uploadMenuSelectors = [
+    '[role="menuitem"]:has-text("Upload from computer")',
+    '[role="menuitem"]:has-text("Upload files")',
+    '[role="menuitem"]:has-text("Add photos and files")',
+    '[role="menuitem"]:has-text("Carica dal computer")',
+    '[role="menuitem"]:has-text("Carica file")',
+    'button:has-text("Upload from computer")',
+    'button:has-text("Upload files")',
+    'button:has-text("Add photos and files")',
+    'button:has-text("Carica dal computer")',
+    'button:has-text("Carica file")',
+    'text=/Upload from computer|Upload files|Add photos and files|Carica dal computer|Carica file/i',
+  ];
+
+  for (const selector of uploadMenuSelectors) {
+    const menuItem = page.locator(selector).first();
+
+    try {
+      await menuItem.waitFor({ state: "visible", timeout: 1_200 });
+      const [fileChooser] = await Promise.all([
+        page.waitForEvent("filechooser", { timeout: 3_000 }),
+        menuItem.click(),
+      ]);
+      return fileChooser;
+    } catch {
+      // try next selector
+    }
+  }
+
+  throw new Error("Unable to open ChatGPT attachment file chooser.");
+}
+
+async function waitForUploadedAttachmentNames(
+  page: Page,
+  attachmentPaths: string[],
+): Promise<void> {
+  const fileNames = attachmentPaths.map((attachmentPath) =>
+    path.basename(attachmentPath),
+  );
+  const deadline = Date.now() + 120_000;
+
+  while (Date.now() < deadline) {
+    const pageText = await page.locator("body").innerText().catch(() => "");
+
+    if (fileNames.every((fileName) => pageText.includes(fileName))) {
+      return;
+    }
+
+    await page.waitForTimeout(500);
+  }
+
+  throw new Error(
+    `Timed out waiting for uploaded attachment chips: ${fileNames.join(", ")}`,
+  );
 }
 
 async function maybeSelectChatGptModel(
@@ -322,26 +452,48 @@ async function clearFocusedInput(page: Page): Promise<void> {
 
 async function clickSend(page: Page): Promise<void> {
   const selectors = [
+    '[data-testid="composer-submit-button"]',
     '[data-testid="send-button"]',
+    'button[aria-label="Send message"]',
+    'button[aria-label="Invia messaggio"]',
     'button[aria-label="Send prompt"]',
     'button[aria-label="Invia prompt"]',
     'button:has-text("Send")',
     'button:has-text("Invia")',
   ];
+  const deadline = Date.now() + 30_000;
 
-  for (const selector of selectors) {
-    const button = page.locator(selector).first();
+  while (Date.now() < deadline) {
+    for (const selector of selectors) {
+      const button = page.locator(selector).first();
 
-    try {
-      await button.waitFor({ state: "visible", timeout: 900 });
-      await button.click();
-      return;
-    } catch {
-      // try next selector
+      try {
+        await button.waitFor({ state: "visible", timeout: 500 });
+        const disabled = await button
+          .evaluate((element) =>
+            element instanceof HTMLButtonElement
+              ? element.disabled || element.getAttribute("aria-disabled") === "true"
+              : element.getAttribute("aria-disabled") === "true",
+          )
+          .catch(() => true);
+
+        if (disabled) {
+          continue;
+        }
+
+        await button.click();
+        return;
+      } catch {
+        // try next selector
+      }
     }
+
+    await page.waitForTimeout(500);
   }
 
-  await page.keyboard.press("Enter");
+  throw new Error(
+    "Unable to find an enabled ChatGPT send button. If files are still uploading, retry after the upload finishes or use --mode prefill.",
+  );
 }
 
 async function countAssistantMessages(page: Page): Promise<number> {

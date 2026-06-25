@@ -38,6 +38,8 @@ const EXTERNAL_REVIEW_RESPONSE_PATH = path.join(
 );
 const DEFAULT_MAX_FILE_SIZE_BYTES = 40_000;
 const DEFAULT_MAX_TOTAL_PACKAGE_BYTES = 400_000;
+const DEFAULT_MAX_ARCHIVE_FILE_SIZE_BYTES = 250_000;
+const DEFAULT_MAX_ARCHIVE_BYTES = 2_000_000;
 const MAX_REVIEW_RUNS = 10;
 const RUN_ID_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[a-f0-9]{8}$/;
 
@@ -60,8 +62,47 @@ type SafeRepositoryFile = {
   skippedReason?: string;
 };
 
+type ArchiveIncludedFile = {
+  path: string;
+  size: number;
+};
+
+type ArchiveSkippedFile = {
+  path: string;
+  reason: string;
+  size?: number;
+};
+
+type SourceArchiveManifest = {
+  runId: string;
+  createdAt: string;
+  mode: "source-archive";
+  targetProvider: TargetProvider;
+  goal: string;
+  includeUntracked: boolean;
+  archive: {
+    path: string;
+    sha256: string;
+    fileCount: number;
+    totalBytes: number;
+    maxArchiveBytes: number;
+    maxFileSizeBytes: number;
+  };
+  files: {
+    included: ArchiveIncludedFile[];
+    skipped: ArchiveSkippedFile[];
+  };
+};
+
 type TargetProvider = "chatgpt-chat" | "claude-chat";
-type Command = "prepare" | "ask" | "copy" | "ingest" | "help";
+type Command =
+  | "prepare"
+  | "ask"
+  | "archive"
+  | "send"
+  | "copy"
+  | "ingest"
+  | "help";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -74,6 +115,12 @@ async function main(): Promise<void> {
         break;
       case "ask":
         await ask(args.slice(1));
+        break;
+      case "archive":
+        await archiveSource(args.slice(1));
+        break;
+      case "send":
+        await sendPrepared(args.slice(1));
         break;
       case "copy":
         copyPrompt(args.slice(1));
@@ -149,6 +196,8 @@ async function ask(args: string[]): Promise<void> {
   const mode = readWebMode(args);
   const model = readOption(args, "--model");
   const modelSelection = readModelSelection(args);
+  const responseStableMs = readPositiveNumberOption(args, "--response-stable-ms");
+  const maxWaitMs = readPositiveNumberOption(args, "--max-wait-ms");
   const result = await sendToChatGptWeb({
     repositoryPath: process.cwd(),
     requestPath: reviewRun.requestPath,
@@ -156,6 +205,8 @@ async function ask(args: string[]): Promise<void> {
     mode,
     model,
     modelSelection,
+    responseStableMs,
+    maxWaitMs,
   });
 
   if (result.responseText) {
@@ -171,6 +222,154 @@ async function ask(args: string[]): Promise<void> {
   }
 
   console.log(`Sent to ${sendProvider} in ${mode} mode`);
+
+  if (result.responsePath) {
+    console.log(`Created ${result.responsePath}`);
+  }
+}
+
+async function archiveSource(args: string[]): Promise<void> {
+  useRepository(args);
+  ensureGiviDir();
+  ensureGitRepository();
+
+  if (!commandExists("zip")) {
+    throw new Error(
+      "Missing zip command. Install zip or use givi prepare for prompt-only review packages.",
+    );
+  }
+
+  const goal = readOption(args, "--goal") ?? "Review the attached source archive.";
+  const targetProvider = readTargetProvider(args);
+  const includeUntracked = !args.includes("--no-untracked");
+  const maxFileSizeBytes =
+    readPositiveNumberOption(args, "--max-archive-file-size-bytes") ??
+    DEFAULT_MAX_ARCHIVE_FILE_SIZE_BYTES;
+  const maxArchiveBytes =
+    readPositiveNumberOption(args, "--max-archive-bytes") ??
+    DEFAULT_MAX_ARCHIVE_BYTES;
+
+  const reviewRun = createReviewRun();
+  const archivePath = path.join(reviewRun.runDir, "source-context.zip");
+  const manifestPath = path.join(reviewRun.runDir, "source-manifest.json");
+  const { includedFiles, skippedFiles, totalBytes } = collectArchiveFiles({
+    includeUntracked,
+    maxFileSizeBytes,
+    maxArchiveBytes,
+  });
+
+  if (includedFiles.length === 0) {
+    throw new Error("No source files were eligible for the archive.");
+  }
+
+  writeZipArchive(archivePath, includedFiles.map((file) => file.path));
+
+  const archiveSha256 = createHash("sha256")
+    .update(readFileSync(archivePath))
+    .digest("hex");
+  const manifest: SourceArchiveManifest = {
+    runId: reviewRun.runId,
+    createdAt: new Date().toISOString(),
+    mode: "source-archive",
+    targetProvider,
+    goal,
+    includeUntracked,
+    archive: {
+      path: archivePath,
+      sha256: archiveSha256,
+      fileCount: includedFiles.length,
+      totalBytes,
+      maxArchiveBytes,
+      maxFileSizeBytes,
+    },
+    files: {
+      included: includedFiles,
+      skipped: skippedFiles,
+    },
+  };
+  const prompt = buildSourceArchivePrompt({
+    targetProvider,
+    goal,
+    archivePath,
+    manifestPath,
+    manifest,
+  });
+
+  writeFileSync(
+    manifestPath,
+    `${JSON.stringify(manifest, null, 2)}\n`,
+    "utf8",
+  );
+  writeFileSync(EXTERNAL_REVIEW_REQUEST_PATH, prompt, "utf8");
+  writeFileSync(reviewRun.requestPath, prompt, "utf8");
+  writeSourceArchiveMetadata(reviewRun, {
+    goal,
+    targetProvider,
+    includeUntracked,
+    archivePath,
+    manifestPath,
+    archiveSha256,
+    includedFileCount: includedFiles.length,
+    skippedFileCount: skippedFiles.length,
+    requestText: prompt,
+  });
+  writeFileSync(LATEST_RUN_ID_PATH, `${reviewRun.runId}\n`, "utf8");
+  pruneOldReviewRuns(MAX_REVIEW_RUNS);
+
+  console.log(`Created ${reviewRun.runDir}`);
+  console.log(`Created ${archivePath}`);
+  console.log(`Created ${manifestPath}`);
+  console.log(`Created ${EXTERNAL_REVIEW_REQUEST_PATH}`);
+  console.log(`Included ${includedFiles.length} files (${totalBytes} bytes).`);
+  console.log(`Skipped ${skippedFiles.length} files. See ${manifestPath}.`);
+
+  const sendProvider = readOption(args, "--send");
+
+  if (!sendProvider) {
+    console.log("Run givi copy, then paste the prompt and attach the zip and manifest to the provider chat.");
+    return;
+  }
+
+  if (targetProvider !== "chatgpt-chat") {
+    throw new Error(
+      "Automated archive sending is currently implemented only for chatgpt-chat/chatgpt-web. Use manual copy/ingest for claude-chat.",
+    );
+  }
+
+  if (sendProvider !== "chatgpt-web") {
+    throw new Error(`Unsupported send provider: ${sendProvider}`);
+  }
+
+  const mode = readWebMode(args);
+  const model = readOption(args, "--model");
+  const modelSelection = readModelSelection(args);
+  const responseStableMs = readPositiveNumberOption(args, "--response-stable-ms");
+  const maxWaitMs = readPositiveNumberOption(args, "--max-wait-ms");
+  const result = await sendToChatGptWeb({
+    repositoryPath: process.cwd(),
+    requestPath: reviewRun.requestPath,
+    responsePath: reviewRun.responsePath,
+    attachmentPaths: [archivePath],
+    mode,
+    model,
+    modelSelection,
+    responseStableMs,
+    maxWaitMs,
+  });
+
+  if (result.responseText) {
+    writeFileSync(
+      EXTERNAL_REVIEW_RESPONSE_PATH,
+      result.responseText,
+      "utf8",
+    );
+  }
+
+  if (result.modelSelectionWarning) {
+    console.warn(result.modelSelectionWarning);
+  }
+
+  console.log(`Sent archive to ${sendProvider} in ${mode} mode`);
 
   if (result.responsePath) {
     console.log(`Created ${result.responsePath}`);
@@ -326,6 +525,74 @@ ${untrackedContent || "No untracked file content included."}
   console.log(`Created ${EXTERNAL_REVIEW_REQUEST_PATH}`);
 }
 
+async function sendPrepared(args: string[]): Promise<void> {
+  useRepository(args);
+  ensureGiviDir();
+
+  const latestRun = readLatestReviewRun();
+
+  if (!latestRun || !existsSync(latestRun.requestPath)) {
+    throw new Error(
+      "No prepared GiviLoop request found. Run: givi prepare --goal \"...\" or givi archive --goal \"...\" first.",
+    );
+  }
+
+  const sendProvider = readOption(args, "--send") ?? "chatgpt-web";
+
+  if (sendProvider !== "chatgpt-web") {
+    throw new Error(`Unsupported send provider: ${sendProvider}`);
+  }
+
+  const metadata = readReviewRunMetadata(latestRun);
+  const targetProvider = readMetadataString(metadata, "targetProvider");
+
+  if (targetProvider && targetProvider !== "chatgpt-chat") {
+    throw new Error(
+      `Latest request targets ${targetProvider}. Automated web sending currently supports chatgpt-chat only. Use givi copy/ingest for this run or create a chatgpt-chat request.`,
+    );
+  }
+
+  const attachmentPaths = readPreparedRunAttachmentPaths(latestRun, metadata);
+  const mode = readWebMode(args);
+  const model = readOption(args, "--model");
+  const modelSelection = readModelSelection(args);
+  const responseStableMs = readPositiveNumberOption(args, "--response-stable-ms");
+  const maxWaitMs = readPositiveNumberOption(args, "--max-wait-ms");
+  const result = await sendToChatGptWeb({
+    repositoryPath: process.cwd(),
+    requestPath: latestRun.requestPath,
+    responsePath: latestRun.responsePath,
+    attachmentPaths,
+    mode,
+    model,
+    modelSelection,
+    responseStableMs,
+    maxWaitMs,
+  });
+
+  if (result.responseText) {
+    writeFileSync(
+      EXTERNAL_REVIEW_RESPONSE_PATH,
+      result.responseText,
+      "utf8",
+    );
+  }
+
+  if (result.modelSelectionWarning) {
+    console.warn(result.modelSelectionWarning);
+  }
+
+  console.log(`Sent ${latestRun.requestPath} to ${sendProvider} in ${mode} mode`);
+
+  if (attachmentPaths.length > 0) {
+    console.log(`Attached ${attachmentPaths.join(", ")}`);
+  }
+
+  if (result.responsePath) {
+    console.log(`Created ${result.responsePath}`);
+  }
+}
+
 function copyPrompt(args: string[]): void {
   useRepository(args);
 
@@ -415,6 +682,202 @@ Here is the review package:
 ${reviewPackage}
 </REVIEW_PACKAGE>
 `;
+}
+
+function buildSourceArchivePrompt(input: {
+  targetProvider: TargetProvider;
+  goal: string;
+  archivePath: string;
+  manifestPath: string;
+  manifest: SourceArchiveManifest;
+}): string {
+  const providerName =
+    input.targetProvider === "claude-chat" ? "Claude" : "ChatGPT";
+
+  return `You are ${providerName}, acting as an external senior software reviewer.
+
+I attached a source archive generated by GiviLoop:
+
+- Source archive: ${input.archivePath}
+- Local manifest path: ${input.manifestPath}
+
+Use the inline manifest below to understand which files were included or skipped.
+
+Goal:
+
+${input.goal.trim()}
+
+Archive summary:
+
+- Included files: ${input.manifest.archive.fileCount}
+- Included source bytes before zip compression: ${input.manifest.archive.totalBytes}
+- Skipped files: ${input.manifest.files.skipped.length}
+
+Manifest JSON:
+
+\`\`\`json
+${JSON.stringify(input.manifest, null, 2)}
+\`\`\`
+
+Important rules:
+- Treat this archive as repository context, not as permission to modify code.
+- Focus on logic, runtime risks, validation gaps, data consistency, edge cases, and maintainability.
+- Do not give generic advice.
+- Be concrete and actionable.
+- If more context is needed, say exactly what is missing.
+
+Return the answer using this structure:
+
+# External AI Review
+
+## Verdict
+safe | risky | blocked
+
+## Critical Issues
+
+## Medium Issues
+
+## Minor Issues
+
+## Questions
+
+## Suggested Fixes
+
+## Reviewer Notes
+`;
+}
+
+function collectArchiveFiles(input: {
+  includeUntracked: boolean;
+  maxFileSizeBytes: number;
+  maxArchiveBytes: number;
+}): {
+  includedFiles: ArchiveIncludedFile[];
+  skippedFiles: ArchiveSkippedFile[];
+  totalBytes: number;
+} {
+  const includedFiles: ArchiveIncludedFile[] = [];
+  const skippedFiles: ArchiveSkippedFile[] = getIgnoredFiles().map((file) => ({
+    path: file,
+    reason: "ignored by git exclude rules.",
+  }));
+  let totalBytes = 0;
+
+  for (const file of getArchiveCandidateFiles(input.includeUntracked)) {
+    if (file.includes("\n")) {
+      skippedFiles.push({
+        path: file,
+        reason: "path contains a newline and cannot be archived safely.",
+      });
+      continue;
+    }
+
+    try {
+      const safeFile = inspectRepositoryFile(process.cwd(), file);
+
+      if (safeFile.skippedReason) {
+        skippedFiles.push({
+          path: safeFile.normalizedPath,
+          reason: safeFile.skippedReason,
+          size: safeFile.size,
+        });
+        continue;
+      }
+
+      if (shouldOmitFileContent(safeFile.normalizedPath)) {
+        skippedFiles.push({
+          path: safeFile.normalizedPath,
+          reason:
+            "file omitted because it is sensitive, generated, binary, lockfile, or not useful for review.",
+          size: safeFile.size,
+        });
+        continue;
+      }
+
+      if (safeFile.size > input.maxFileSizeBytes) {
+        skippedFiles.push({
+          path: safeFile.normalizedPath,
+          reason: `file too large (${safeFile.size} bytes).`,
+          size: safeFile.size,
+        });
+        continue;
+      }
+
+      if (totalBytes + safeFile.size > input.maxArchiveBytes) {
+        skippedFiles.push({
+          path: safeFile.normalizedPath,
+          reason: `archive budget exhausted (${safeFile.size} bytes requested, ${input.maxArchiveBytes - totalBytes} bytes remaining).`,
+          size: safeFile.size,
+        });
+        continue;
+      }
+
+      includedFiles.push({
+        path: safeFile.normalizedPath,
+        size: safeFile.size,
+      });
+      totalBytes += safeFile.size;
+    } catch {
+      skippedFiles.push({
+        path: file,
+        reason: "unable to read file.",
+      });
+    }
+  }
+
+  return {
+    includedFiles,
+    skippedFiles,
+    totalBytes,
+  };
+}
+
+function getArchiveCandidateFiles(includeUntracked: boolean): string[] {
+  const outputs = [git(["ls-files", "--cached"])];
+
+  if (includeUntracked) {
+    outputs.push(git(["ls-files", "--others", "--exclude-standard"]));
+  }
+
+  return uniqueSortedGitPaths(outputs.flatMap(splitGitPathOutput)).filter(
+    shouldConsiderRepositoryFile,
+  );
+}
+
+function getIgnoredFiles(): string[] {
+  return uniqueSortedGitPaths(
+    splitGitPathOutput(
+      git(["ls-files", "--others", "--ignored", "--exclude-standard"]),
+    ),
+  ).filter(shouldConsiderRepositoryFile);
+}
+
+function splitGitPathOutput(value: string): string[] {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function uniqueSortedGitPaths(files: string[]): string[] {
+  return [...new Set(files)].sort((left, right) => left.localeCompare(right));
+}
+
+function shouldConsiderRepositoryFile(file: string): boolean {
+  return (
+    !file.startsWith(".git/") &&
+    !file.startsWith(".giviloop/") &&
+    !file.startsWith("node_modules/") &&
+    !file.startsWith("dist/")
+  );
+}
+
+function writeZipArchive(archivePath: string, files: string[]): void {
+  execFileSync("zip", ["-q", "-X", archivePath, "-@"], {
+    cwd: process.cwd(),
+    input: `${files.join("\n")}\n`,
+    stdio: ["pipe", "ignore", "pipe"],
+  });
 }
 
 type AdvisoryAttachedFile = {
@@ -707,6 +1170,61 @@ function readLatestReviewRun(): ReviewRun | undefined {
   };
 }
 
+function readReviewRunMetadata(
+  run: ReviewRun,
+): Record<string, unknown> | undefined {
+  const metadataPath = path.join(run.runDir, "metadata.json");
+
+  if (!existsSync(metadataPath)) {
+    return undefined;
+  }
+
+  const metadata = JSON.parse(readFileSync(metadataPath, "utf8")) as unknown;
+
+  if (
+    typeof metadata !== "object" ||
+    metadata === null ||
+    Array.isArray(metadata)
+  ) {
+    return undefined;
+  }
+
+  return metadata as Record<string, unknown>;
+}
+
+function readMetadataString(
+  metadata: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  const value = metadata?.[key];
+
+  return typeof value === "string" ? value : undefined;
+}
+
+function readPreparedRunAttachmentPaths(
+  run: ReviewRun,
+  metadata: Record<string, unknown> | undefined,
+): string[] {
+  const sourceArchivePath = path.join(run.runDir, "source-context.zip");
+  const runMode = readMetadataString(metadata, "mode");
+
+  if (runMode === "source-archive") {
+    if (!existsSync(sourceArchivePath)) {
+      throw new Error(
+        `Latest run is a source archive, but the zip is missing: ${sourceArchivePath}`,
+      );
+    }
+
+    return [sourceArchivePath];
+  }
+
+  if (!runMode && existsSync(sourceArchivePath)) {
+    return [sourceArchivePath];
+  }
+
+  return [];
+}
+
 function writeReviewRunMetadata(
   run: ReviewRun,
   input: { goal: string; targetProvider: TargetProvider; requestText: string },
@@ -751,6 +1269,49 @@ function writeAdvisoryRunMetadata(
     files: {
       requestPath: run.requestPath,
       responsePath: run.responsePath,
+    },
+    requestSha256: createHash("sha256").update(input.requestText).digest("hex"),
+  };
+
+  writeFileSync(
+    path.join(run.runDir, "metadata.json"),
+    `${JSON.stringify(metadata, null, 2)}\n`,
+    "utf8",
+  );
+}
+
+function writeSourceArchiveMetadata(
+  run: ReviewRun,
+  input: {
+    goal: string;
+    targetProvider: TargetProvider;
+    includeUntracked: boolean;
+    archivePath: string;
+    manifestPath: string;
+    archiveSha256: string;
+    includedFileCount: number;
+    skippedFileCount: number;
+    requestText: string;
+  },
+): void {
+  const metadata = {
+    runId: run.runId,
+    createdAt: new Date().toISOString(),
+    mode: "source-archive",
+    targetProvider: input.targetProvider,
+    goal: input.goal,
+    includeUntracked: input.includeUntracked,
+    archive: {
+      path: input.archivePath,
+      sha256: input.archiveSha256,
+      includedFileCount: input.includedFileCount,
+      skippedFileCount: input.skippedFileCount,
+    },
+    files: {
+      requestPath: run.requestPath,
+      responsePath: run.responsePath,
+      manifestPath: input.manifestPath,
+      archivePath: input.archivePath,
     },
     requestSha256: createHash("sha256").update(input.requestText).digest("hex"),
   };
@@ -1244,14 +1805,17 @@ GiviLoop V0
 Local external-review loop for IDE coding agents.
 
 Core flows:
-  1. Ask about specific code
+  1. Recommended repository review: create a tracked-file source archive, send it, save the answer
+     givi archive --repo /path/to/repo --goal "Review the current implementation" --send chatgpt-web --mode auto --no-untracked
+
+  2. Ask about specific code
      givi ask --repo /path/to/repo --file server.js --question "Review this endpoint pattern" --send chatgpt-web --mode auto
 
-  2. Review local git changes
+  3. Advanced diff-only review
      givi prepare --repo /path/to/repo --goal "Review the current implementation"
-     npm --prefix /path/to/GiviLoop run chatgpt:web -- --repo /path/to/repo --mode auto
+     givi send --repo /path/to/repo --send chatgpt-web --mode auto
 
-  3. Manual fallback when browser automation is not enough
+  4. Manual fallback
      givi prepare --repo /path/to/repo --goal "Review the current implementation"
      givi copy --repo /path/to/repo
      # paste into the provider, copy the answer
@@ -1260,6 +1824,8 @@ Core flows:
 Commands:
   prepare   Create a review package from local git diff and untracked files.
   ask       Create an advisory request, optionally attaching local files with --file.
+  archive   Create a source-context zip and manifest, optionally sending them to ChatGPT web.
+  send      Send the latest prepared request to ChatGPT web.
   copy      Copy the latest prepared provider prompt to the clipboard.
   ingest    Save a provider response from the clipboard into the latest run and inbox.
   help      Show this help.
@@ -1276,9 +1842,15 @@ Important options:
                             prefill only fills the prompt; submit sends it; auto waits and saves the answer.
   --model LABEL             Request a provider-specific web UI model label.
   --require-model           Fail if the requested web UI model cannot be selected.
+  --max-wait-ms N           Maximum wait for an auto-mode provider response.
+  --response-stable-ms N    Required response stability window before saving.
   --max-file-size-bytes N   Skip attached/untracked/tracked content larger than N bytes.
   --max-total-package-bytes N
                             Skip additional included content after the package budget is exhausted.
+  --max-archive-file-size-bytes N
+                            Skip archive files larger than N bytes. Defaults to 250000 bytes.
+  --max-archive-bytes N     Stop adding archive files after this source-byte budget. Defaults to 2000000 bytes.
+  --no-untracked            For givi archive, include tracked files only. Recommended for customer runs.
 
 After an auto run, ask your IDE agent:
   Use GiviLoop to read the saved external review for this repository with reviewResponseMode act.
