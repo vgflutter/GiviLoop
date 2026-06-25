@@ -26,6 +26,8 @@ The goal is to keep the active agent focused on reasoning, implementation, and d
 
 <video src="https://github.com/user-attachments/assets/6d294d9f-8ac4-4f4a-bbc7-fb0638b7f297" controls width="100%"></video>
 
+Shows the natural-language IDE-agent flow through MCP: prepare/send an external review, then analyze or act on the saved response.
+
 ## Who Is This For?
 
 GiviLoop is for developers using IDE coding agents who want a controlled way to get a second opinion from an external LLM before accepting or applying changes.
@@ -40,6 +42,13 @@ GiviLoop currently supports four workflows:
 - bring the saved external response back to the IDE agent for analysis or action.
 
 External responses are advisory. The IDE agent should evaluate the answer critically before changing code.
+
+## Two Ways To Use It
+
+GiviLoop can be used in two main ways:
+
+- **IDE agent / MCP flow**: ask your IDE coding agent to prepare, send, read, analyze, or act on an external review using natural-language prompts.
+- **CLI / console flow**: run `givi` commands directly when you want to package local git/files context outside the active agent conversation.
 
 ## Quick Start
 
@@ -87,6 +96,8 @@ Repository-level review:
 ### Console Flow Demo
 
 <video src="https://github.com/user-attachments/assets/53948c6a-f53c-491f-9759-bca404b0c92e" controls width="100%"></video>
+
+Shows the CLI flow: package local context from the terminal, send or copy the request, save the response, and make it available to the IDE agent later.
 
 Show help:
 
