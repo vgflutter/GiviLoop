@@ -90,7 +90,12 @@ async function launch(profile: string, background: boolean): Promise<BrowserCont
         if (!finished && !await within(exited, 2000)) child.kill("SIGKILL");
         if (!finished && !await within(exited, 2000)) throw new NativeChromeError("BROWSER_CLOSE_FAILED", "The owned Chrome process did not terminate. Check givi doctor before retrying.");
         await browser?.close().catch(() => {});
-      } finally { unregister(close); }
+      } finally {
+        // Chrome helpers can inherit stderr and outlive the browser process.
+        // Do not keep the caller alive waiting for those helpers to close it.
+        child.stderr.destroy();
+        unregister(close);
+      }
     })();
   }
   register(close);
