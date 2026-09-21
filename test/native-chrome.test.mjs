@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { chmodSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
@@ -25,4 +26,46 @@ for (const [name, stderr, code] of [
   });
   assert.equal(process.listenerCount("SIGINT"), interruptListeners);
   assert.equal(process.listenerCount("SIGTERM"), terminateListeners);
+});
+
+test("closing Chrome releases inherited stderr even while a helper stays alive", { skip: process.platform === "win32" }, async t => {
+  const f = fixture(t), executable = path.join(f.root, "chrome-with-helper");
+  const ownerFile = path.join(f.root, "owner.pid"), helperFile = path.join(f.root, "helper.pid");
+  let helperPid;
+  t.after(() => {
+    if (helperPid) {
+      try { process.kill(helperPid, "SIGTERM"); } catch (error) { if (error.code !== "ESRCH") throw error; }
+    }
+  });
+  writeFileSync(executable, `#!${process.execPath}\n
+    const { spawn } = require('node:child_process');
+    const { writeFileSync } = require('node:fs');
+    const helper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], { stdio: ['ignore', 'ignore', 2] });
+    writeFileSync(${JSON.stringify(helperFile)}, String(helper.pid)); helper.unref();
+    writeFileSync(${JSON.stringify(ownerFile)}, String(process.pid));
+    const port = process.argv.find(arg => arg.startsWith('--remote-debugging-port=')).split('=')[1];
+    process.stderr.write('DevTools listening on ws://127.0.0.1:' + port + '/devtools/browser/test-browser\\n');
+    setInterval(() => {}, 1000);
+  `);
+  chmodSync(executable, 0o700);
+  const runner = path.join(f.root, "runner.mjs");
+  writeFileSync(runner, `
+    import { createRequire } from 'node:module';
+    import { readFileSync } from 'node:fs';
+    const { chromium } = createRequire(${JSON.stringify(path.join(distDir, "cli.js"))})('playwright');
+    chromium.connectOverCDP = async () => ({
+      contexts: () => [{}], isConnected: () => true, close: async () => {},
+      newBrowserCDPSession: async () => ({ send: async () => process.kill(Number(readFileSync(${JSON.stringify(ownerFile)}, 'utf8')), 'SIGTERM') }),
+    });
+    const { nativeChrome } = await import(${JSON.stringify(pathToFileURL(path.join(distDir, "providers/native-chrome.js")).href)});
+    const context = await nativeChrome.launch(${JSON.stringify(path.join(f.root, "profile"))}, false);
+    await context.close();
+    console.log('closed');
+  `);
+  const result = spawnSync(process.execPath, [runner], { env: { ...process.env, GIVILOOP_CHROME_PATH: executable }, encoding: "utf8", timeout: 4000 });
+  if (existsSync(helperFile)) helperPid = Number(readFileSync(helperFile, "utf8"));
+  assert.match(result.stdout, /closed/);
+  assert.equal(result.error, undefined, "a completed launch/close must allow the caller to exit without waiting for helper EOF");
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotThrow(() => process.kill(helperPid, 0), "cleanup must not kill a helper process it does not own");
 });
