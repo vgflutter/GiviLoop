@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { redactSecrets } from "./redaction.js";
+import { isLocalProvider, type LocalProvider } from "./providers/local-types.js";
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -6,14 +8,16 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
-  readdirSync,
   readFileSync,
   realpathSync,
-  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { checkBrowserAccess, diagnoseBrowser, openLoginBrowser } from "./browser-commands.js";
+import { pruneCompletedRuns, RUN_ID_PATTERN } from "./run-storage.js";
+import { VERSION } from "./version.js";
+import { probeLocalProvider, readLocalProvider, readLocalReasoning, sendLocalReview } from "./providers/local-review.js";
 import {
   sendToChatGptWeb,
   type ChatGptModelSelection,
@@ -41,7 +45,6 @@ const DEFAULT_MAX_TOTAL_PACKAGE_BYTES = 400_000;
 const DEFAULT_MAX_ARCHIVE_FILE_SIZE_BYTES = 250_000;
 const DEFAULT_MAX_ARCHIVE_BYTES = 2_000_000;
 const MAX_REVIEW_RUNS = 10;
-const RUN_ID_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[a-f0-9]{8}$/;
 
 type ReviewRun = {
   runId: string;
@@ -102,6 +105,9 @@ type Command =
   | "send"
   | "copy"
   | "ingest"
+  | "doctor"
+  | "models"
+  | "browser"
   | "help";
 
 async function main(): Promise<void> {
@@ -109,6 +115,8 @@ async function main(): Promise<void> {
   const command = (args[0] ?? "help") as Command;
 
   try {
+    if (args.includes("--help") || args.includes("-h")) { printHelp(); return; }
+    if (args[0] === "--version") { console.log(VERSION); return; }
     switch (command) {
       case "prepare":
         prepare(args.slice(1));
@@ -128,10 +136,40 @@ async function main(): Promise<void> {
       case "ingest":
         ingestReview(args.slice(1));
         break;
+      case "models": {
+        const provider = readLocalProvider(readOption(args, "--provider") ?? "ollama");
+        console.log(JSON.stringify(await probeLocalProvider(provider, readOption(args, "--base-url")), null, 2));
+        break;
+      }
+      case "doctor": {
+        const provider = readOption(args, "--provider");
+        if (provider) {
+          console.log(JSON.stringify(await probeLocalProvider(readLocalProvider(provider), readOption(args, "--base-url")), null, 2));
+          break;
+        }
+        const report = diagnoseBrowser(readOption(args, "--browser-profile"));
+        console.log(JSON.stringify(report, null, 2));
+        if (!report.chromeExecutable) process.exitCode = 1;
+        break;
+      }
+      case "browser": {
+        if (args[1] === "check") {
+          const report = await checkBrowserAccess(readOption(args, "--browser-profile"), args.includes("--headless"), readPositiveNumberOption(args, "--navigation-timeout-ms"), readVerificationWaitOption(args));
+          console.log(JSON.stringify(report, null, 2));
+          if (!report.ready) process.exitCode = 1;
+          break;
+        }
+        if (args[1] !== "login") throw new Error("Usage: givi browser login|check [--browser-profile PATH]");
+        const profile = await openLoginBrowser(readOption(args, "--browser-profile"));
+        console.log(`Opened regular Chrome with the GiviLoop profile: ${profile}`);
+        console.log("Sign in, then close this Chrome instance before sending. No prompt is sent by this command.");
+        break;
+      }
       case "help":
-      default:
         printHelp();
         break;
+      default:
+        throw new Error(`Unknown command: ${command}. Run givi help for available commands.`);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -149,6 +187,7 @@ async function ask(args: string[]): Promise<void> {
     throw new Error('Missing question. Run: givi ask --question "..."');
   }
 
+  validateDeliveryOptions(args, readOption(args, "--send"));
   ensureGiviDir();
 
   const maxFileSizeBytes =
@@ -183,6 +222,11 @@ async function ask(args: string[]): Promise<void> {
     return;
   }
 
+  if (isLocalProvider(sendProvider)) {
+    await sendRunToLocalProvider(args, reviewRun, sendProvider);
+    return;
+  }
+
   if (targetProvider !== "chatgpt-chat") {
     throw new Error(
       "Automated web sending is currently implemented only for chatgpt-chat/chatgpt-web. Use manual copy/ingest for claude-chat.",
@@ -203,13 +247,18 @@ async function ask(args: string[]): Promise<void> {
     requestPath: reviewRun.requestPath,
     responsePath: reviewRun.responsePath,
     mode,
+    headless: args.includes("--headless"),
+    background: args.includes("--background"),
+    userDataDir: readOption(args, "--browser-profile"),
+    navigationTimeoutMs: readPositiveNumberOption(args, "--navigation-timeout-ms"),
+    verificationWaitMs: readVerificationWaitOption(args),
     model,
     modelSelection,
     responseStableMs,
     maxWaitMs,
   });
 
-  if (result.responseText) {
+  if (result.responseText && readLatestReviewRun()?.runId === reviewRun.runId) {
     writeFileSync(
       EXTERNAL_REVIEW_RESPONSE_PATH,
       result.responseText,
@@ -229,6 +278,9 @@ async function ask(args: string[]): Promise<void> {
 }
 
 async function archiveSource(args: string[]): Promise<void> {
+  const destination = readOption(args, "--send");
+  validateDeliveryOptions(args, destination);
+  if (isLocalProvider(destination)) throw new Error("Local inference accepts text context, not ZIP uploads. Use givi ask --file or givi prepare followed by givi send --send " + destination + ".");
   useRepository(args);
   ensureGiviDir();
   ensureGitRepository();
@@ -351,13 +403,18 @@ async function archiveSource(args: string[]): Promise<void> {
     responsePath: reviewRun.responsePath,
     attachmentPaths: [archivePath],
     mode,
+    headless: args.includes("--headless"),
+    background: args.includes("--background"),
+    userDataDir: readOption(args, "--browser-profile"),
+    navigationTimeoutMs: readPositiveNumberOption(args, "--navigation-timeout-ms"),
+    verificationWaitMs: readVerificationWaitOption(args),
     model,
     modelSelection,
     responseStableMs,
     maxWaitMs,
   });
 
-  if (result.responseText) {
+  if (result.responseText && readLatestReviewRun()?.runId === reviewRun.runId) {
     writeFileSync(
       EXTERNAL_REVIEW_RESPONSE_PATH,
       result.responseText,
@@ -529,7 +586,7 @@ async function sendPrepared(args: string[]): Promise<void> {
   useRepository(args);
   ensureGiviDir();
 
-  const latestRun = readLatestReviewRun();
+  const latestRun = readSelectedReviewRun(args);
 
   if (!latestRun || !existsSync(latestRun.requestPath)) {
     throw new Error(
@@ -538,6 +595,12 @@ async function sendPrepared(args: string[]): Promise<void> {
   }
 
   const sendProvider = readOption(args, "--send") ?? "chatgpt-web";
+  validateDeliveryOptions(args, sendProvider);
+  if (isLocalProvider(sendProvider)) {
+    if (existsSync(path.join(latestRun.runDir, "source-context.zip"))) throw new Error("Local inference accepts text context, not ZIP uploads. Use givi ask --file or givi prepare.");
+    await sendRunToLocalProvider(args, latestRun, sendProvider, readPreparedRunAttachmentPaths(latestRun, readReviewRunMetadata(latestRun)));
+    return;
+  }
 
   if (sendProvider !== "chatgpt-web") {
     throw new Error(`Unsupported send provider: ${sendProvider}`);
@@ -548,7 +611,7 @@ async function sendPrepared(args: string[]): Promise<void> {
 
   if (targetProvider && targetProvider !== "chatgpt-chat") {
     throw new Error(
-      `Latest request targets ${targetProvider}. Automated web sending currently supports chatgpt-chat only. Use givi copy/ingest for this run or create a chatgpt-chat request.`,
+      `Selected request targets ${targetProvider}. Automated web sending currently supports chatgpt-chat only. Use givi copy/ingest for this run or create a chatgpt-chat request.`,
     );
   }
 
@@ -564,13 +627,18 @@ async function sendPrepared(args: string[]): Promise<void> {
     responsePath: latestRun.responsePath,
     attachmentPaths,
     mode,
+    headless: args.includes("--headless"),
+    background: args.includes("--background"),
+    userDataDir: readOption(args, "--browser-profile"),
+    navigationTimeoutMs: readPositiveNumberOption(args, "--navigation-timeout-ms"),
+    verificationWaitMs: readVerificationWaitOption(args),
     model,
     modelSelection,
     responseStableMs,
     maxWaitMs,
   });
 
-  if (result.responseText) {
+  if (result.responseText && readLatestReviewRun()?.runId === latestRun.runId) {
     writeFileSync(
       EXTERNAL_REVIEW_RESPONSE_PATH,
       result.responseText,
@@ -593,12 +661,66 @@ async function sendPrepared(args: string[]): Promise<void> {
   }
 }
 
+function readVerificationWaitOption(args: string[]): number | undefined {
+  const raw = readOption(args, "--verification-wait-ms");
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!raw.trim() || !Number.isSafeInteger(value) || value < 0 || value > 900000) throw new Error("--verification-wait-ms must be an integer from 0 to 900000.");
+  return value;
+}
+
+function validateDeliveryOptions(args: string[], destination?: string): void {
+  const local = isLocalProvider(destination);
+  const provided = (flag: string) => args.some(arg => arg === flag || arg.startsWith(flag + "="));
+  if (local) {
+    if (!readOption(args, "--model")?.trim()) throw new Error("Local inference requires --model. Run givi models --provider " + destination + " to list models.");
+    if (readWebMode(args) !== "auto") throw new Error("Local inference supports --mode auto only.");
+    for (const flag of ["--headless", "--background", "--browser-profile", "--navigation-timeout-ms", "--verification-wait-ms", "--response-stable-ms", "--require-model"]) {
+      if (provided(flag)) throw new Error(flag + " is a browser option and cannot be used for local inference.");
+    }
+    readLocalReasoning(readOption(args, "--reasoning"));
+  } else {
+    for (const flag of ["--base-url", "--max-output-tokens", "--context-tokens", "--reasoning"]) {
+      if (provided(flag)) throw new Error(flag + " requires --send with a local provider. No browser request was sent.");
+    }
+  }
+}
+
+async function sendRunToLocalProvider(args: string[], run: ReviewRun, provider: LocalProvider, attachmentPaths: string[] = []): Promise<void> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  process.once("SIGINT", abort);
+  process.once("SIGTERM", abort);
+  try {
+    const result = await sendLocalReview({
+      signal: controller.signal,
+      provider, model: readOption(args, "--model") ?? "", requestPath: run.requestPath,
+      responsePath: run.responsePath, attachmentPaths, baseUrl: readOption(args, "--base-url"),
+      timeoutMs: readPositiveNumberOption(args, "--max-wait-ms"),
+      maxOutputTokens: readPositiveNumberOption(args, "--max-output-tokens"),
+      contextTokens: readPositiveNumberOption(args, "--context-tokens"),
+      reasoning: readLocalReasoning(readOption(args, "--reasoning")),
+    });
+    if (readLatestReviewRun()?.runId === run.runId) writeFileSync(EXTERNAL_REVIEW_RESPONSE_PATH, result.responseText, "utf8");
+    console.log(`Completed local review with ${result.provider}, model ${result.model}, in ${result.elapsedMs} ms.`);
+    console.log(`Created ${result.responsePath}`);
+    console.log(`Usage: input=${result.inputTokens ?? "unknown"}, output=${result.outputTokens ?? "unknown"} tokens. See local-usage.json in the run.`);
+  } finally {
+    process.removeListener("SIGINT", abort);
+    process.removeListener("SIGTERM", abort);
+  }
+}
+
 function copyPrompt(args: string[]): void {
   useRepository(args);
 
   ensureGiviDir();
 
-  const latestRun = readLatestReviewRun();
+  const latestRun = readSelectedReviewRun(args);
+
+  if (latestRun && !existsSync(latestRun.requestPath)) {
+    throw new Error(`Request file not found for run ${latestRun.runId}: ${latestRun.requestPath}`);
+  }
 
   if (latestRun && existsSync(latestRun.requestPath)) {
     const prompt = readFileSync(latestRun.requestPath, "utf8");
@@ -607,6 +729,13 @@ function copyPrompt(args: string[]): void {
 
     console.log(`Copied ${latestRun.requestPath} to clipboard.`);
     console.log(`Updated ${EXTERNAL_REVIEW_REQUEST_PATH}`);
+    if (args.includes("--open")) {
+      const targetProvider = readMetadataString(
+        readReviewRunMetadata(latestRun),
+        "targetProvider",
+      );
+      openProviderChat(targetProvider ?? readTargetProvider(args));
+    }
     return;
   }
 
@@ -630,6 +759,38 @@ function copyPrompt(args: string[]): void {
   console.log(`Created ${providerPromptPath}`);
   console.log(`Created ${EXTERNAL_REVIEW_REQUEST_PATH}`);
   console.log("Copied provider review prompt to clipboard.");
+  if (args.includes("--open")) {
+    openProviderChat(targetProvider);
+  }
+}
+
+function openProviderChat(provider: string): void {
+  const url =
+    provider === "chatgpt-chat"
+      ? "https://chatgpt.com/"
+      : provider === "claude-chat"
+        ? "https://claude.ai/new"
+        : undefined;
+
+  if (!url) {
+    throw new Error(`Cannot open a chat for unsupported target provider: ${provider}`);
+  }
+
+  // Open the user's regular browser; it is not controlled by Playwright.
+  try {
+    if (process.platform === "darwin") {
+      execFileSync("open", [url], { stdio: "ignore" });
+    } else if (process.platform === "win32") {
+      execFileSync("rundll32.exe", ["url.dll,FileProtocolHandler", url], {
+        stdio: "ignore",
+      });
+    } else {
+      execFileSync("xdg-open", [url], { stdio: "ignore" });
+    }
+    console.log(`Opened ${url}. Paste and send the prompt, then copy the answer and run givi ingest.`);
+  } catch {
+    console.warn(`The prompt is copied, but the browser could not be opened. Open ${url} manually.`);
+  }
 }
 
 function buildProviderPrompt(
@@ -954,7 +1115,13 @@ function ingestReview(args: string[]): void {
 
   ensureGiviDir();
 
-  const targetProvider = readTargetProvider(args);
+  const selectedRun = readSelectedReviewRun(args);
+  const latestRun = readLatestReviewRun();
+  const metadata = selectedRun ? readReviewRunMetadata(selectedRun) : undefined;
+  const targetProvider = readTargetProvider(
+    args,
+    readMetadataString(metadata, "targetProvider"),
+  );
   const rawReview = readClipboard().trim();
 
   if (!rawReview) {
@@ -968,6 +1135,7 @@ function ingestReview(args: string[]): void {
 ## Metadata
 
 - Provider: ${targetProvider}
+- Run ID: ${selectedRun?.runId ?? "legacy"}
 - Mode: manual
 - Created at: ${new Date().toISOString()}
 
@@ -976,18 +1144,14 @@ function ingestReview(args: string[]): void {
 ${rawReview}
 `;
 
-  writeFileSync(EXTERNAL_REVIEW_RESPONSE_PATH, content, "utf8");
-
-  const latestRun = readLatestReviewRun();
-
-  if (latestRun) {
-    writeFileSync(latestRun.responsePath, content, "utf8");
+  if (selectedRun) {
+    writeFileSync(selectedRun.responsePath, content, "utf8");
+    console.log(`Created ${selectedRun.responsePath}`);
   }
 
-  console.log(`Created ${EXTERNAL_REVIEW_RESPONSE_PATH}`);
-
-  if (latestRun) {
-    console.log(`Created ${latestRun.responsePath}`);
+  if (!selectedRun || selectedRun.runId === latestRun?.runId) {
+    writeFileSync(EXTERNAL_REVIEW_RESPONSE_PATH, content, "utf8");
+    console.log(`Created ${EXTERNAL_REVIEW_RESPONSE_PATH}`);
   }
 }
 
@@ -1070,13 +1234,12 @@ function readModelSelection(args: string[]): ChatGptModelSelection {
   return args.includes("--require-model") ? "require" : "prefer";
 }
 
-function readTargetProvider(args: string[]): TargetProvider {
+function readTargetProvider(
+  args: string[],
+  fallback: string = "chatgpt-chat",
+): TargetProvider {
   const provider =
-    readOption(args, "--target-provider") ?? readOption(args, "--provider");
-
-  if (!provider) {
-    return "chatgpt-chat";
-  }
+    readOption(args, "--target-provider") ?? readOption(args, "--provider") ?? fallback;
 
   if (provider === "chatgpt-chat" || provider === "claude-chat") {
     return provider;
@@ -1142,6 +1305,26 @@ function createRunId(): string {
   return `${timestamp}-${suffix}`;
 }
 
+function readSelectedReviewRun(args: string[]): ReviewRun | undefined {
+  const runId = readOption(args, "--run-id");
+  return runId === undefined ? readLatestReviewRun() : readReviewRunById(runId);
+}
+
+function readReviewRunById(runId: string): ReviewRun {
+  assertValidRunId(runId);
+  const runDir = path.join(RUNS_DIR, runId);
+  if (!existsSync(runDir) || !statSync(runDir).isDirectory()) {
+    throw new Error(`GiviLoop run not found: ${runId}`);
+  }
+  return {
+    runId,
+    runDir,
+    reviewPackagePath: path.join(runDir, "review-package.md"),
+    requestPath: path.join(runDir, "external-review-request.md"),
+    responsePath: path.join(runDir, "external-review-response.md"),
+  };
+}
+
 function readLatestReviewRun(): ReviewRun | undefined {
   if (!existsSync(LATEST_RUN_ID_PATH)) {
     return undefined;
@@ -1161,13 +1344,7 @@ function readLatestReviewRun(): ReviewRun | undefined {
     return undefined;
   }
 
-  return {
-    runId,
-    runDir,
-    reviewPackagePath: path.join(runDir, "review-package.md"),
-    requestPath: path.join(runDir, "external-review-request.md"),
-    responsePath: path.join(runDir, "external-review-response.md"),
-  };
+  return readReviewRunById(runId);
 }
 
 function readReviewRunMetadata(
@@ -1324,19 +1501,7 @@ function writeSourceArchiveMetadata(
 }
 
 function pruneOldReviewRuns(maxRuns: number): void {
-  if (!existsSync(RUNS_DIR)) {
-    return;
-  }
-
-  const runs = readdirSync(RUNS_DIR, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort()
-    .reverse();
-
-  for (const runId of runs.slice(maxRuns)) {
-    rmSync(path.join(RUNS_DIR, runId), { recursive: true, force: true });
-  }
+  pruneCompletedRuns(process.cwd(), maxRuns);
 }
 
 function git(args: string[]): string {
@@ -1388,7 +1553,7 @@ Skipped: ${budgetReason}
 `;
       }
 
-      return redactSecrets(fileDiff);
+      return redactSecrets(fileDiff, file);
     })
     .filter(Boolean)
     .join("\n");
@@ -1454,7 +1619,7 @@ Skipped: ${budgetReason}
 `;
         }
 
-        const content = redactSecrets(readFileSync(safeFile.absolutePath, "utf8"));
+        const content = redactSecrets(readFileSync(safeFile.absolutePath, "utf8"), safeFile.absolutePath);
 
         return `### ${safeFile.normalizedPath}
 
@@ -1541,7 +1706,7 @@ function readAttachedFiles(
 
       return {
         path: safeFile.normalizedPath,
-        content: redactSecrets(readFileSync(safeFile.absolutePath, "utf8")),
+        content: redactSecrets(readFileSync(safeFile.absolutePath, "utf8"), safeFile.absolutePath),
       };
     } catch {
       return {
@@ -1681,28 +1846,6 @@ function shouldOmitFileContent(file: string): boolean {
   ].includes(extension);
 }
 
-function redactSecrets(value: string): string {
-  return value
-    .replace(
-      /(["']?(?:api[_-]?key|token|secret|password|passwd|pwd)["']?\s*[:=]\s*)["']?[^"',\s}]+/gi,
-      "$1[REDACTED]",
-    )
-    .replace(
-      /(["']?(?:DATABASE_URL|REDIS_URL|POSTGRES_URL|MYSQL_URL)["']?\s*[:=]\s*)["']?[^"',\s}]+/g,
-      "$1[REDACTED]",
-    )
-    .replace(/(authorization\s*:\s*bearer\s+)[^\s]+/gi, "$1[REDACTED]")
-    .replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, "[REDACTED_AWS_ACCESS_KEY_ID]")
-    .replace(/\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g, "gh[REDACTED]")
-    .replace(/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, "github_pat_[REDACTED]")
-    .replace(/\bnpm_[A-Za-z0-9]{36,}\b/g, "npm_[REDACTED]")
-    .replace(/sk-[A-Za-z0-9_-]{20,}/g, "sk-[REDACTED]")
-    .replace(
-      /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
-      "[REDACTED PRIVATE KEY]",
-    );
-}
-
 function writeClipboard(value: string): void {
   const platform = process.platform;
 
@@ -1800,47 +1943,75 @@ function commandExists(command: string): boolean {
 
 function printHelp(): void {
   console.log(`
-GiviLoop V0
+GiviLoop ${VERSION}
 
-Local external-review loop for IDE coding agents.
+Double-check your coding agent with web chat or local models.
 
 Core flows:
-  1. Recommended repository review: create a tracked-file source archive, send it, save the answer
-     givi archive --repo /path/to/repo --goal "Review the current implementation" --send chatgpt-web --mode auto --no-untracked
+  1. Double Check current Git changes
+     givi prepare --repo /path/to/repo --goal "Find concrete bugs and regression cases"
+     givi send --repo /path/to/repo --send chatgpt-web --mode auto --background
+     # Ask your agent to verify the saved findings before applying changes.
 
-  2. Ask about specific code
-     givi ask --repo /path/to/repo --file server.js --question "Review this endpoint pattern" --send chatgpt-web --mode auto
+  2. Review selected code through an existing web chat session
+     givi ask --repo /path/to/repo --file server.js --question "Find a concrete correctness bug" --send chatgpt-web --mode auto --background
 
-  3. Advanced diff-only review
+  3. Automatic local review
+     givi models --provider ollama
+     givi ask --repo /path/to/repo --file server.js --question "Find a concrete correctness bug" --send ollama --model MODEL_FROM_DISCOVERY
+
+  4. Manual web transfer
      givi prepare --repo /path/to/repo --goal "Review the current implementation"
-     givi send --repo /path/to/repo --send chatgpt-web --mode auto
-
-  4. Manual fallback
-     givi prepare --repo /path/to/repo --goal "Review the current implementation"
-     givi copy --repo /path/to/repo
-     # paste into the provider, copy the answer
+     givi copy --repo /path/to/repo --open
+     # Paste and send on the website, then copy the answer.
      givi ingest --repo /path/to/repo
+
+Web reviews make no separately billed model API call through GiviLoop.
+Chat quotas and provider terms still apply; total token savings are not measured.
+The browser adapter is experimental. See docs/costs-and-access.md.
 
 Commands:
   prepare   Create a review package from local git diff and untracked files.
   ask       Create an advisory request, optionally attaching local files with --file.
   archive   Create a source-context zip and manifest, optionally sending them to ChatGPT web.
-  send      Send the latest prepared request to ChatGPT web.
-  copy      Copy the latest prepared provider prompt to the clipboard.
-  ingest    Save a provider response from the clipboard into the latest run and inbox.
+  send      Send a prepared request to the selected web/local provider (latest or --run-id).
+  copy      Copy a prepared provider prompt to the clipboard (latest or --run-id).
+  ingest    Save a clipboard response in its run (latest or --run-id).
+  models    List locally installed/loaded models (--provider ollama|dwarfstar|llama-cpp|lmstudio|mlx).
+  doctor    With --provider, check a local runtime; otherwise check Chrome installation and the dedicated profile without opening it.
+  browser login
+            Open regular Chrome for initial sign-in. Close it before sending.
+  browser check
+            Probe website access without sending a prompt; supports --headless.
   help      Show this help.
 
 Important options:
   --repo PATH               Repository to review or store the GiviLoop run in.
+  --run-id ID               Select a saved run for copy, ingest or send. Defaults to the latest run.
   --question TEXT           Advisory question for givi ask.
   --goal TEXT               Goal/context for givi prepare.
   --file PATH               Attach a repository-local file to givi ask. Can be repeated.
+  --open                    With givi copy, open the target chat in your regular browser for manual use.
   --target-provider chatgpt-chat|claude-chat
                             Generate provider-specific manual prompts. Defaults to chatgpt-chat.
-  --send chatgpt-web        Send the generated request to ChatGPT web.
+  --send chatgpt-web|ollama|dwarfstar|llama-cpp|lmstudio|mlx
+                            Send through the browser or a local inference runtime.
+  --provider ollama|dwarfstar|llama-cpp|lmstudio|mlx
+                            Runtime for models and doctor commands.
+  --base-url URL            Loopback-only local server URL; no cloud fallback.
+  --max-output-tokens N     Local generation budget, including model thinking where applicable.
+  --context-tokens N        Local context budget (DwarfStar: minimum server context capacity).
+  --reasoning off|on|low|medium|high
+                            Local reasoning control; model/runtime must support the value.
   --mode prefill|submit|auto
                             prefill only fills the prompt; submit sends it; auto waits and saves the answer.
-  --model LABEL             Request a provider-specific web UI model label.
+  --headless                Run without a browser window. Requires --mode auto; provider access may require login.
+  --background              Use a minimized Chrome window. Requires auto; incompatible with --headless.
+  --verification-wait-ms N  Wait for your verification tap (default 180000 headed, 0 headless; maximum 900000).
+  --browser-profile PATH    Dedicated Chrome profile shared by browser login and send.
+  --navigation-timeout-ms N
+                            Timeout per initial page load; at most two attempts before sending.
+  --model LABEL             Required local model name, or optional web UI model label.
   --require-model           Fail if the requested web UI model cannot be selected.
   --max-wait-ms N           Maximum wait for an auto-mode provider response.
   --response-stable-ms N    Required response stability window before saving.
@@ -1850,7 +2021,7 @@ Important options:
   --max-archive-file-size-bytes N
                             Skip archive files larger than N bytes. Defaults to 250000 bytes.
   --max-archive-bytes N     Stop adding archive files after this source-byte budget. Defaults to 2000000 bytes.
-  --no-untracked            For givi archive, include tracked files only. Recommended for customer runs.
+  --no-untracked            For givi archive, include tracked files only. Use when untracked files should be excluded.
 
 After an auto run, ask your IDE agent:
   Use GiviLoop to read the saved external review for this repository with reviewResponseMode act.

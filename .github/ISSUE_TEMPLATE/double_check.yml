@@ -1,0 +1,38 @@
+name: Double Check experience
+description: Share a confirmed finding, false positive or workflow problem.
+body:
+  - type: markdown
+    attributes:
+      value: "Help improve the existing review loop. Use public or synthetic code only; leave unavailable token/cost measurements unknown."
+  - type: input
+    id: reviewer
+    attributes:
+      label: Review setup
+      description: Version, CLI/MCP, provider, model if known, and files/diff scope.
+    validations:
+      required: true
+  - type: textarea
+    id: finding
+    attributes:
+      label: What did the reviewer find?
+      description: A small example and a summary of the advice, without private source or conversations.
+    validations:
+      required: true
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Outcome after checking
+      options:
+        - Confirmed
+        - Dismissed
+        - Unverified
+        - No finding or workflow failed
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and usefulness
+      description: Reproduction or test result, false assumptions, setup friction, time spent, and whether you would use this again.
+    validations:
+      required: true

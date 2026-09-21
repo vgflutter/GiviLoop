@@ -241,7 +241,7 @@ test("send refuses a Claude-targeted prepared request before web automation", ()
   });
 
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Latest request targets claude-chat/);
+  assert.match(result.stderr, /request targets claude-chat/);
   assert.match(result.stderr, /givi copy\/ingest/);
 
   rmSync(repo, { recursive: true, force: true });

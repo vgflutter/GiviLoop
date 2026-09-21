@@ -1,15 +1,18 @@
 {
   "name": "giviloop",
-  "version": "0.0.1",
-  "description": "External AI review loop for coding agents.",
+  "version": "0.3.0",
+  "description": "Double-check your coding agent with web chat or local models. Saved reviews, CLI and MCP.",
   "type": "module",
   "license": "MIT",
   "bin": {
-    "givi": "./dist/cli.js"
+    "givi": "./dist/cli.js",
+    "givi-mcp": "./dist/mcp-server.js"
   },
   "scripts": {
     "build": "tsc",
     "test": "npm run build && node --test test/*.test.mjs",
+    "test:browser": "npm run build && node --test --test-concurrency=1 test/browser/*.test.mjs",
+    "test:package": "node scripts/package-smoke.mjs",
     "prepack": "npm run build",
     "givi": "node dist/cli.js",
     "mcp": "node dist/mcp-server.js",
@@ -18,7 +21,23 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "docs/accesso-provider.md",
+    "docs/troubleshooting.md",
+    "docs/release-readiness-2026-09-21.md",
+    "CONTRIBUTING.md",
+    "docs/ollama.md",
+    "docs/dwarfstar.md",
+    "docs/local-inference-validation-2026-09-21.md",
+    "LICENSE",
+    "docs/local-engines.md",
+    "docs/production-validation-2026-09-21.md",
+    "docs/chatgpt-403-resolution-2026-09-21.md",
+    "docs/usage.md",
+    "docs/double-check.md",
+    "docs/roadmap.md",
+    "examples/double-check/sum.ts",
+    "docs/costs-and-access.md",
+    "docs/releases/0.3.0.md"
   ],
   "engines": {
     "node": ">=20"
@@ -30,5 +49,22 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "playwright": "^1.61.1"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vgflutter/GiviLoop.git"
+  },
+  "homepage": "https://github.com/vgflutter/GiviLoop#readme",
+  "bugs": {
+    "url": "https://github.com/vgflutter/GiviLoop/issues"
+  },
+  "keywords": [
+    "code-review",
+    "double-check",
+    "mcp",
+    "coding-agent",
+    "chatgpt",
+    "ollama",
+    "local-llm"
+  ]
 }
