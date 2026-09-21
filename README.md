@@ -1,260 +1,155 @@
 # GiviLoop
 
-GiviLoop is a local external-review loop for IDE coding agents.
+**Double-check your code. Put your existing chat access to work.**
 
-It lets your agent package local code context, send it to an external LLM such as ChatGPT, save the answer, and then either analyze the feedback or apply only the fixes that make sense.
+Bring a second model into your development loop. GiviLoop packages selected code or Git changes, asks a reviewer you choose, and returns the saved feedback to your coding agent. Your agent can then check the findings and apply the fixes you want.
 
-The point is simple: make external LLM review a repeatable local workflow instead of a copy/paste ritual.
+Web chat + local models · CLI + MCP · Open source · MIT
 
-> Current status: V0 prototype. Built for local personal workflows; not production-grade automation.
+```mermaid
+flowchart LR
+    A[Your coding agent] -->|Selected code or diff| B[GiviLoop]
+    B --> C[Reviewer you choose]
+    C -->|Saved feedback| D[Your agent checks the findings]
+    D -->|Accepted fixes and tests| A
+```
 
-## Why GiviLoop?
+**Choose the reviewer. Keep the review. Decide what changes.**
 
-When working with IDE coding agents, getting an external second opinion often turns into a copy/paste loop:
+> **Release 0.3.0.** Focused on the existing review loop and saved feedback. The optional ChatGPT browser adapter remains experimental: access depends on the website and provider terms. See [release scope](docs/releases/0.3.0.md).
 
-agent summary -> external LLM review -> pasted feedback -> agent interpretation
+## Why use it?
 
-GiviLoop moves the mechanical packaging step out of the active agent conversation.
+Two jobs, using the tools already available:
 
-It builds a local review or advisory package from git/files, sends it to an external LLM, saves the response locally, and lets the original agent analyze or act on it later.
+- **Double Check.** Ask another model to challenge selected files or Git changes, then have your coding agent verify each finding before applying a fix. Keep the request and response together in `.giviloop/`.
+- **Use existing chat access for a review.** A review performed on a chat website makes no separately billed model API call through GiviLoop. This can avoid an extra API expense when you would otherwise pay for that review through an API. Your chat plan, quotas and provider terms still apply.
 
-The goal is to keep the active agent focused on reasoning, implementation, and decisions, not on narrating local files to another chat.
+This is a choice about **where you spend your inference budget**, not a measured reduction in total tokens. Your coding agent still consumes its own quota when preparing context and assessing the answer. [Costs, token accounting and access](docs/costs-and-access.md).
 
-## Demo
+A second model can catch a missed edge case. It can also invent one. Checking its claims against the code and tests is what makes Double Check useful.
 
-### IDE Agent Flow
+## Double Check, today
+
+With the MCP server connected, ask your coding agent:
+
+```text
+Double-check my current Git changes with GiviLoop.
+Use ChatGPT web in auto mode with background enabled.
+Ask for concrete bugs, supporting code, and regression cases.
+Read the saved review in analyze-only mode.
+Check each finding and report confirmed, dismissed, or unverified, with reasons.
+Do not edit files.
+```
+
+The web path needs an authenticated, available browser session. It is an optional experimental integration, not provider-authorized API access: OpenAI's European terms prohibit automatic extraction of output. A disclaimer does not remove that restriction. For manual web transfer or an automatic local reviewer, see the [full recipe](docs/double-check.md) and [access note](docs/costs-and-access.md).
+
+This is an **agent workflow using existing tools**. GiviLoop saves and returns the review; your coding agent performs the verification. A dedicated Double Check command and structured evidence records are [proposed next steps](docs/roadmap.md), not shipped features.
+
+## Try a first review
+
+You need Node.js 20+ and Git. Clone and build GiviLoop:
+
+```sh
+git clone https://github.com/vgflutter/GiviLoop.git
+cd GiviLoop
+npm ci
+npm run build
+```
+
+For the optional automatic web path, install Google Chrome and authenticate in the dedicated profile:
+
+```sh
+npm run givi -- browser login
+# Finish signing in, then close that dedicated Chrome window.
+npm run givi -- browser check
+
+npm run givi -- ask --repo . --file examples/double-check/sum.ts \
+  --question "Check the stated contract. Find a concrete bug, suggest the smallest fix and regression tests." \
+  --send chatgpt-web --mode auto --background
+```
+
+The exchange runs automatically in a minimized Chrome window. A human verification request can bring the window forward; verification may recur. Repeated challenges stop with a specific error. Background mode resolved the observed 403; **headless remains blocked in the tested session**. [Browser troubleshooting](docs/troubleshooting.md#human-verification-and-repeated-challenges).
+
+The [example](examples/double-check/sum.ts) is deliberately buggy: `sum([])` throws instead of returning zero. A useful review identifies the missing initial accumulator and proposes a test for the empty array. This is a small reproducible fixture, not a quality benchmark.
+
+GiviLoop prints the saved request and response paths. It leaves the source unchanged. Ask your agent to read that response and check the recommendation; then try a file from your own repository with `--repo /path/to/repo --file src/cart.ts`.
+
+Prefer manual web transfer? Prepare without `--send`, use `givi copy --open`, and import the answer you copied with `givi ingest`. Prefer full local automation? Use an installed [Ollama model](docs/ollama.md) or another [local engine](docs/local-engines.md). The [Double Check recipe](docs/double-check.md) includes both paths. There is no hosted GiviLoop account to create.
+
+## Use it from your coding agent
+
+Configure your MCP client to launch the built server:
+
+```json
+{
+  "mcpServers": {
+    "giviloop": {
+      "command": "node",
+      "args": ["/absolute/path/to/GiviLoop/dist/mcp-server.js"]
+    }
+  }
+}
+```
+
+This is the common JSON form; use your client's equivalent stdio-server configuration. GiviLoop exposes tools for model discovery, preparing context, requesting a review, and reading a saved response. Configure the client's request timeout to cover the inference budget.
+
+Start with `reviewResponseMode: "analyze-only"` to discuss feedback without requesting edits. Use `"act"` when you want your agent to evaluate the findings, apply sensible fixes and run checks. These are instructions to the host agent; GiviLoop does not execute patches or tests itself.
+
+[Tool reference and advanced flows →](docs/usage.md#mcp-tools)
+
+## See the loop
 
 <video src="https://github.com/user-attachments/assets/6d294d9f-8ac4-4f4a-bbc7-fb0638b7f297" controls width="100%"></video>
 
-Shows the natural-language IDE-agent flow through MCP: prepare/send an external review, then analyze or act on the saved response.
+The IDE demo shows preparing a review, retrieving the answer and handing it back to the coding agent. The [console demo and commands](docs/usage.md#console-usage) cover terminal use.
 
-## Who Is This For?
+## Reviewers and current status
 
-GiviLoop is for developers using IDE coding agents who want a controlled way to get a second opinion from an external LLM before accepting or applying changes.
+| Integration | What is available | Validation and limits |
+| --- | --- | --- |
+| **Ollama** | Automatic local review through CLI/MCP | Real reviews with downloaded weights. [Setup and results](docs/ollama.md). |
+| **llama.cpp / LM Studio** | Automatic local review through CLI/MCP | Real reviews with an explicitly loaded model. [Setup](docs/local-engines.md). |
+| **MLX-LM** | Local inference on Apple Silicon | Real reviews tested; the upstream server remains experimental. [Details](docs/local-engines.md). |
+| **DwarfStar** | Adapter for antirez's native server | Native synthetic GPU/server test passed; trained-model review still needs suitable hardware. [Requirements](docs/dwarfstar.md). |
+| **ChatGPT web** | Optional automatic visible/background session | Real authenticated CLI/MCP reviews completed. Headless remains blocked in the tested session; named-model selection and long reasoning are not validated. [Evidence](docs/chatgpt-403-resolution-2026-09-21.md). |
+| **Manual chat** | Copy a prepared prompt, then ingest an answer you copied | ChatGPT and Claude prompt formats. [Workflow](docs/usage.md#manual-flows). |
 
-## What It Does
+For ChatGPT's tested background path, use `--send chatgpt-web --mode auto --background`. Login and occasional human verification may be required. The browser integration's technical success does not establish permission under provider terms; read the [provider-access note](docs/accesso-provider.md).
 
-GiviLoop currently supports four workflows:
+Local adapters connect to loopback servers, require an explicit model and never silently fall back to cloud inference. Configure the runtime for local execution. Returning its answer to a cloud coding agent still shares that answer with the agent provider.
 
-- send a tracked-file source archive to ChatGPT web and save the review;
-- ask an external LLM about a specific file or code pattern;
-- review local git changes only;
-- bring the saved external response back to the IDE agent for analysis or action.
+## What we have measured
 
-External responses are advisory. The IDE agent should evaluate the answer critically before changing code.
+The [local validation](docs/production-validation-2026-09-21.md) records successful reviews **and incorrect advice**. In a small MLX trial, both reviews without thinking were wrong; the tested thinking configuration identified both defects, while still making some incorrect secondary suggestions. That is a reason to verify findings, not proof that one setting will always win.
 
-## Two Ways To Use It
+The [browser validation](docs/chatgpt-403-resolution-2026-09-21.md) includes two complete background reviews through CLI and MCP, with eleven independently checked regression cases. These fixtures establish that the workflow runs; they do not establish superiority over another reviewer.
 
-GiviLoop can be used in two main ways:
+GiviLoop records local runtime token counts when available. **Total token savings and equivalence to larger models have not been demonstrated.** A second review adds work; focused context and local inference give you choices about where that work happens.
 
-- **IDE agent / MCP flow**: ask your IDE coding agent to prepare, send, read, analyze, or act on an external review using natural-language prompts.
-- **CLI / console flow**: run `givi` commands directly when you want to package local git/files context outside the active agent conversation.
+## After this release
 
-## Quick Start
+The release stays focused on **Double Check and reviewing through existing chat access**. No new provider or multi-agent panel is required to try it. Next, collect real usage and false positives, then add structured finding evidence and rechecks. See the [roadmap](docs/roadmap.md).
 
-Requirements:
+Try it on a real change. Open an issue with a small reproducible example: what the reviewer found, whether the finding held up, and where the workflow helped or got in the way. Reports of false positives are as useful as successful demos. Avoid sharing private source or credentials. Contributions to examples, adapters and onboarding are welcome; start with [CONTRIBUTING.md](CONTRIBUTING.md).
 
-- Node.js 20 or newer
-- Google Chrome for web automation
-- zip for source-archive creation
-- A logged-in web LLM session in the browser profile opened by GiviLoop
+## Documentation and development
 
-Recommended first step: run one `--send chatgpt-web --mode auto` command once, log in manually to ChatGPT in the Playwright/Chrome window that GiviLoop opens, then rerun the command. GiviLoop reuses that local browser profile for later requests.
+- [Double Check recipe](docs/double-check.md) · [CLI/MCP usage reference](docs/usage.md)
+- [Costs and access](docs/costs-and-access.md) · [Release notes](docs/releases/0.3.0.md)
+- [Local engine setup](docs/local-engines.md) · [Troubleshooting](docs/troubleshooting.md)
+- [Roadmap proposal](docs/roadmap.md) · [Data handling](docs/usage.md#safety-and-legal)
 
-Install and build:
+Add `.giviloop/` to the reviewed repository's `.gitignore`: run files can contain source code and prompts. Redaction is best effort; source archives are not redacted line by line. Older completed runs are pruned, so export results you want to retain. Details are in the [usage reference](docs/usage.md#output-files).
 
-    npm install
-    npm run build
+```sh
+npm test
+npm run test:browser
+npm run test:package -- --browser
+```
 
-Configure your IDE agent to start the MCP server with:
-
-    npm --prefix /path/to/GiviLoop run mcp
-
-You can also run the server directly while developing:
-
-    npm run mcp
-
-## IDE Prompts
-
-Focused review with selected fixes:
-
-    Ask ChatGPT through GiviLoop to review the refund endpoint pattern in server.js.
-    When the answer returns, apply only the fixes that make sense.
-
-Focused review without edits:
-
-    Ask ChatGPT through GiviLoop to review the refund endpoint pattern in server.js.
-    When the answer returns, analyze it only and do not modify files.
-
-Repository-level review:
-
-    Use GiviLoop to create a tracked-file source archive for this repository, send it to ChatGPT web in auto mode, then analyze the saved response only.
-    Do not modify files.
-
-## Console Usage
-
-### Console Flow Demo
-
-<video src="https://github.com/user-attachments/assets/53948c6a-f53c-491f-9759-bca404b0c92e" controls width="100%"></video>
-
-Shows the CLI flow: package local context from the terminal, send or copy the request, save the response, and make it available to the IDE agent later.
-
-Show help:
-
-    npm --prefix /path/to/GiviLoop run givi -- help
-
-Recommended repository review:
-
-    GIVILOOP_ALLOWED_REPOSITORIES=/path/to/repo \
-    npm --prefix /path/to/GiviLoop run givi -- archive \
-      --repo /path/to/repo \
-      --goal "Review the current implementation" \
-      --send chatgpt-web \
-      --mode auto \
-      --no-untracked
-
-This creates a small source zip from tracked Git files, embeds the manifest in the prompt, uploads the zip to ChatGPT web, sends the request, and saves the answer.
-
-Ask about one file:
-
-    npm --prefix /path/to/GiviLoop run givi -- ask --repo /path/to/repo --file server.js --question "Review the refund endpoint pattern in server.js. Suggest only minimal safe fixes." --send chatgpt-web --mode auto
-
-Advanced diff-only review:
-
-    npm --prefix /path/to/GiviLoop run givi -- prepare --repo /path/to/repo --goal "Review the current implementation"
-    npm --prefix /path/to/GiviLoop run givi -- send --repo /path/to/repo --mode auto
-
-Manual source archive fallback:
-
-    npm --prefix /path/to/GiviLoop run givi -- archive --repo /path/to/repo --goal "Review the current implementation"
-    npm --prefix /path/to/GiviLoop run givi -- copy --repo /path/to/repo
-    # paste the prompt and attach .giviloop/runs/<run-id>/source-context.zip and source-manifest.json to the provider chat
-
-Prepare a Claude manual-review prompt:
-
-    npm --prefix /path/to/GiviLoop run givi -- prepare --repo /path/to/repo --goal "Review the current implementation" --target-provider claude-chat
-    npm --prefix /path/to/GiviLoop run givi -- copy --repo /path/to/repo
-
-Manual fallback:
-
-    npm --prefix /path/to/GiviLoop run givi -- prepare --repo /path/to/repo --goal "Review the current implementation"
-    npm --prefix /path/to/GiviLoop run givi -- copy --repo /path/to/repo
-    # paste into the provider, copy the answer
-    npm --prefix /path/to/GiviLoop run givi -- ingest --repo /path/to/repo
-
-After an auto run, ask your IDE agent:
-
-    Use GiviLoop to read the saved external review for this repository with reviewResponseMode act.
-    Apply only the fixes that make sense.
-
-Use reviewResponseMode analyze-only when you want a summary without edits.
-
-## Command Orchestration
-
-GiviLoop commands share one run model under `.giviloop/runs/<run-id>/`.
-
-- `archive` is the recommended repository-level entry point. It creates `source-context.zip`, `source-manifest.json`, `external-review-request.md`, and metadata. With `--send chatgpt-web --mode auto`, it uploads the zip, sends the request, and saves the response in the same run.
-- `ask` is the focused advisory path. It creates a question run, optionally includes specific files, sends it when `--send chatgpt-web` is present, and saves the response.
-- `prepare` is the advanced diff-only path. It creates a review package from git diff and untracked files, but does not send it by itself.
-- `send` sends the latest prepared run to ChatGPT web. If the latest run is a source archive, it automatically attaches `source-context.zip`.
-- `copy` and `ingest` are the manual fallback pair. Use them for Claude today, provider UI issues, or cases where you want to paste and review before sending.
-
-Provider targeting is intentionally conservative: automated web sending currently supports `chatgpt-chat` through `chatgpt-web`. Claude prompts are generated for manual review until Claude web automation is implemented.
-
-## Output Files
-
-GiviLoop stores local run data under .giviloop/.
-
-Each run contains:
-
-- metadata.json
-- external-review-request.md
-
-Runs sent in `auto` mode also contain external-review-response.md.
-
-Review-package runs also include review-package.md.
-
-Source-archive runs also include source-context.zip and source-manifest.json. With `--send chatgpt-web --mode auto`, GiviLoop attaches the zip to ChatGPT web automatically, includes the manifest inline in the prompt, sends the request, and saves the response.
-
-The latest run id is stored in .giviloop/latest-run-id.
-
-GiviLoop keeps the latest 10 runs and prunes older ones.
-
-Add this to your gitignore:
-
-    .giviloop/
-
-It can contain prompts, repository context, review packages, run metadata, and external responses.
-
-## Providers
-
-Implemented now:
-
-- ChatGPT prompt generation
-- Claude prompt generation for manual and MCP flows
-- ChatGPT web automation through Playwright
-
-Planned:
-
-- Claude web automation
-
-Web model selection is best-effort because provider UIs change. You can request a model label, and you can require selection to succeed when that matters.
-
-## MCP Tools
-
-Most users should use natural-language IDE prompts, but the MCP tools are:
-
-- givi_help
-- givi_prepare_from_git
-- givi_prepare_from_agent_context
-- givi_send_to_web_llm
-- givi_send_to_chatgpt_web
-- givi_read_external_review
-- givi_ask_web_llm
-
-Source archive creation is currently CLI-first. Use `givi archive --send chatgpt-web --mode auto` for that flow. MCP web-send tools can still send an existing source-archive run because they read the run metadata and attach `source-context.zip` automatically.
-
-The important response modes are:
-
-- analyze-only: summarize and triage without editing files
-- act: evaluate the advice, apply only sensible fixes, run checks, and report what was accepted or rejected
-
-## Safety And Legal
-
-GiviLoop is independent and is not affiliated with OpenAI, Anthropic, or any external LLM provider.
-
-GiviLoop can send repository content to an external provider.
-
-Review packages may include git diffs, untracked files, repository metadata, explicit file attachments, source archives, prompts, and optional IDE conversation context.
-
-The prototype has basic omission and redaction rules for common sensitive files and secret-like values, but it is not a real secret scanner.
-
-Source archives use git's exclude rules by default and omit common generated, binary, lockfile, credential, and symlink paths. Archive file contents are not line-by-line redacted, so do not archive repositories that contain secrets in tracked source files.
-
-Use it only with repositories and providers you are comfortable sending to an external LLM.
-
-Use provider web automation only if it is allowed by the provider terms and by the account or workspace policies that apply to you.
-
-Before sending code or context to an external provider, make sure that doing so is allowed by your organization, client agreements, confidentiality obligations, and the provider terms that apply to your account.
-
-Optional hardening: set `GIVILOOP_ALLOWED_REPOSITORIES` to a path-delimited list of repository roots that may be sent through web LLM automation.
-
-You are responsible for deciding what can be shared externally. GiviLoop helps package and transmit content; it does not decide whether that transfer is permitted.
-
-## Development
-
-Build:
-
-    npm run build
-
-Run the MCP server:
-
-    npm run mcp
-
-Send the latest prepared request to ChatGPT web:
-
-    npm --prefix /path/to/GiviLoop run givi -- send --repo /path/to/repo --mode auto
+Browser tests use local fixtures and isolated profiles. Packaging checks install and test the tarball without publishing it. See [contributing](CONTRIBUTING.md) for prerequisites and CI details.
 
 ## License
 
-MIT
+[MIT](LICENSE). Independent project; not affiliated with model or service providers. Provider terms and model licenses apply separately.

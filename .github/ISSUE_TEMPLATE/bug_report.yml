@@ -1,0 +1,27 @@
+name: Bug report
+description: Report a reproducible setup, CLI, MCP or provider failure.
+body:
+  - type: markdown
+    attributes:
+      value: "Please use a small public or synthetic example. Do not attach .giviloop runs, source archives, browser profiles, credentials or private conversations."
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: GiviLoop version, OS, Node version, provider/runtime and model if applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include a redacted command or MCP arguments and a minimal example.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Expected and actual behavior
+      description: Include the error code. For web sending, say whether the request appeared on the website before the failure.
+    validations:
+      required: true

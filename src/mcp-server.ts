@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { redactSecrets } from "./redaction.js";
+import { LOCAL_PROVIDERS } from "./providers/local-types.js";
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -6,14 +8,15 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
-  readdirSync,
   readFileSync,
   realpathSync,
-  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { pruneCompletedRuns, RUN_ID_PATTERN } from "./run-storage.js";
+import { VERSION } from "./version.js";
+import { probeLocalProvider, readLocalProvider, readLocalReasoning, sendLocalReview, type LocalRunOptions } from "./providers/local-review.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -54,6 +57,13 @@ type SendToWebLlmArgs = {
   repositoryPath: string;
   webProvider?: WebProvider;
   mode?: WebDeliveryMode;
+  headless?: boolean;
+  background?: boolean;
+  browserProfile?: string;
+  navigationTimeoutMs?: number;
+  verificationWaitMs?: number;
+  maxWaitMs?: number;
+  responseStableMs?: number;
   runId?: string;
   model?: string;
   modelSelection?: ChatGptModelSelection;
@@ -129,16 +139,18 @@ const TOOL_SEND_TO_CHATGPT_WEB = "givi_send_to_chatgpt_web";
 const TOOL_READ_EXTERNAL_REVIEW = "givi_read_external_review";
 const TOOL_ASK_WEB_LLM = "givi_ask_web_llm";
 const TOOL_HELP = "givi_help";
+const TOOL_ASK_LOCAL = "givi_ask_local_llm";
+const TOOL_SEND_LOCAL = "givi_send_to_local_llm";
+const TOOL_LOCAL_MODELS = "givi_local_models";
 
 const DEFAULT_MAX_FILE_SIZE_BYTES = 40_000;
 const DEFAULT_MAX_TOTAL_PACKAGE_BYTES = 400_000;
 const MAX_REVIEW_RUNS = 10;
-const RUN_ID_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[a-f0-9]{8}$/;
 
 const server = new Server(
   {
     name: "giviloop",
-    version: "0.0.1",
+    version: VERSION,
   },
   {
     capabilities: {
@@ -150,6 +162,24 @@ const server = new Server(
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
+      {
+        name: TOOL_ASK_LOCAL,
+        description: "Ask a model running in Ollama, DwarfStar, llama.cpp, LM Studio or MLX to review a question and selected files. Fully automatic, no browser or cloud fallback. Saves a run, response, timing and token usage. Default response handling is analyze-only.",
+        inputSchema: localReviewSchema(true),
+      },
+      {
+        name: TOOL_SEND_LOCAL,
+        description: "Send a prepared text review to a supported local runtime. Requires the exact installed/loaded model; does not accept ZIP attachments. Existing request/run association is preserved.",
+        inputSchema: localReviewSchema(false),
+      },
+      {
+        name: TOOL_LOCAL_MODELS,
+        description: "List verified installed/loaded models from Ollama, DwarfStar, llama.cpp, LM Studio or MLX. Uses a loopback server only; no model download or cloud sign-in.",
+        inputSchema: { type: "object", properties: {
+          provider: { type: "string", enum: [...LOCAL_PROVIDERS] },
+          baseUrl: { type: "string", description: "Optional loopback URL for the local runtime." },
+        }, required: ["provider"], additionalProperties: false },
+      },
       {
         name: TOOL_HELP,
         description:
@@ -287,6 +317,33 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 "prefill opens the web UI and fills the prompt, submit also sends it, auto waits for the response and saves it when supported.",
               default: "prefill",
             },
+            headless: {
+              type: "boolean",
+              description:
+                "Run without a browser window. Requires mode=auto; provider access may require login. Headless access can be denied independently of visible access.",
+              default: false,
+            },
+            background: {
+              type: "boolean", default: false,
+              description: "Use standard Chrome in a minimized window. Requires mode=auto and headless=false.",
+            },
+            browserProfile: {
+              type: "string",
+              description: "Dedicated Chrome profile path. Close its login browser before sending.",
+            },
+            verificationWaitMs: { type: "integer", minimum: 0, maximum: 900000, description: "Wait for user browser verification; default 180000 headed and 0 headless. Background temporarily shows the window." },
+            navigationTimeoutMs: {
+              type: "number", exclusiveMinimum: 0,
+              description: "Timeout per initial navigation attempt in milliseconds. At most two attempts before sending.",
+            },
+            maxWaitMs: {
+              type: "number", exclusiveMinimum: 0,
+              description: "Maximum time to wait for a complete response after sending. Default 180000 ms.",
+            },
+            responseStableMs: {
+              type: "number", exclusiveMinimum: 0,
+              description: "Required text stability window before saving a completed response. Default 5000 ms.",
+            },
             runId: {
               type: "string",
               description:
@@ -333,6 +390,33 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               description:
                 "prefill opens ChatGPT and fills the prompt, submit also sends it, auto waits for the response and saves it.",
               default: "prefill",
+            },
+            headless: {
+              type: "boolean",
+              description:
+                "Run without a browser window. Requires mode=auto; provider access may require login. Headless access can be denied independently of visible access.",
+              default: false,
+            },
+            background: {
+              type: "boolean", default: false,
+              description: "Use standard Chrome in a minimized window. Requires mode=auto and headless=false.",
+            },
+            browserProfile: {
+              type: "string",
+              description: "Dedicated Chrome profile path. Close its login browser before sending.",
+            },
+            verificationWaitMs: { type: "integer", minimum: 0, maximum: 900000, description: "Wait for user browser verification; default 180000 headed and 0 headless. Background temporarily shows the window." },
+            navigationTimeoutMs: {
+              type: "number", exclusiveMinimum: 0,
+              description: "Timeout per initial navigation attempt in milliseconds. At most two attempts before sending.",
+            },
+            maxWaitMs: {
+              type: "number", exclusiveMinimum: 0,
+              description: "Maximum time to wait for a complete response after sending. Default 180000 ms.",
+            },
+            responseStableMs: {
+              type: "number", exclusiveMinimum: 0,
+              description: "Required text stability window before saving a completed response. Default 5000 ms.",
             },
             runId: {
               type: "string",
@@ -439,6 +523,33 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 "prefill opens the web UI and fills the question, submit also sends it, auto waits for the response and saves it when supported.",
               default: "auto",
             },
+            headless: {
+              type: "boolean",
+              description:
+                "Run without a browser window. Requires mode=auto; provider access may require login. Headless access can be denied independently of visible access.",
+              default: false,
+            },
+            background: {
+              type: "boolean", default: false,
+              description: "Use standard Chrome in a minimized window. Requires mode=auto and headless=false.",
+            },
+            browserProfile: {
+              type: "string",
+              description: "Dedicated Chrome profile path. Close its login browser before sending.",
+            },
+            verificationWaitMs: { type: "integer", minimum: 0, maximum: 900000, description: "Wait for user browser verification; default 180000 headed and 0 headless. Background temporarily shows the window." },
+            navigationTimeoutMs: {
+              type: "number", exclusiveMinimum: 0,
+              description: "Timeout per initial navigation attempt in milliseconds. At most two attempts before sending.",
+            },
+            maxWaitMs: {
+              type: "number", exclusiveMinimum: 0,
+              description: "Maximum time to wait for a complete response after sending. Default 180000 ms.",
+            },
+            responseStableMs: {
+              type: "number", exclusiveMinimum: 0,
+              description: "Required text stability window before saving a completed response. Default 5000 ms.",
+            },
             model: {
               type: "string",
               description:
@@ -466,8 +577,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   const toolName = request.params.name;
+
+  if (toolName === TOOL_LOCAL_MODELS) {
+    const input = readObject(request.params.arguments);
+    const result = await probeLocalProvider(readLocalProvider(readRequiredString(input, "provider")), readOptionalString(input, "baseUrl"));
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  }
+  if (toolName === TOOL_ASK_LOCAL || toolName === TOOL_SEND_LOCAL) {
+    return runLocalTool(request.params.arguments, toolName === TOOL_ASK_LOCAL, extra.signal);
+  }
 
   if (toolName === TOOL_HELP) {
     return buildHelpToolResponse();
@@ -495,7 +615,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (toolName === TOOL_SEND_TO_WEB_LLM) {
     const args = parseSendToWebLlmArgs(request.params.arguments);
-    const result = await sendPreparedReviewToWebLlm(args);
+    const result = await sendPreparedReviewToWebLlm(args, extra.signal);
 
     return buildWebLlmToolResponse(result);
   }
@@ -505,7 +625,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const result = await sendPreparedReviewToWebLlm({
       ...args,
       webProvider: "chatgpt-web",
-    });
+    }, extra.signal);
 
     return buildWebLlmToolResponse(result);
   }
@@ -519,13 +639,106 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (toolName === TOOL_ASK_WEB_LLM) {
     const args = parseAskWebLlmArgs(request.params.arguments);
-    const result = await askWebLlm(args);
+    const result = await askWebLlm(args, extra.signal);
 
     return buildWebLlmToolResponse(result);
   }
 
   throw new Error(`Unknown tool: ${toolName}`);
 });
+
+function readVerificationWait(input: Record<string, unknown>): number | undefined {
+  const value = input.verificationWaitMs;
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > 900000) throw new Error("verificationWaitMs must be an integer from 0 to 900000.");
+  return value;
+}
+
+function localReviewSchema(ask: boolean) {
+  return {
+    type: "object" as const,
+    properties: {
+      repositoryPath: { type: "string", description: "Repository containing the source or prepared review." },
+      provider: { type: "string", enum: [...LOCAL_PROVIDERS] },
+      model: { type: "string", description: "Exact installed/loaded model identifier from givi_local_models." },
+      baseUrl: { type: "string", description: "Optional loopback-only HTTP(S) URL. No redirects or remote fallback." },
+      maxWaitMs: { type: "integer", minimum: 1, maximum: 3600000 },
+      maxOutputTokens: { type: "integer", minimum: 1, description: "Output budget including thinking when the runtime counts it." },
+      contextTokens: { type: "integer", minimum: 1, description: "Ollama context size; other runtimes verify server capacity where exposed. MLX uses a conservative client budget only." },
+      reasoning: { type: "string", enum: ["off", "on", "low", "medium", "high"], description: "Only supported model/runtime values are accepted." },
+      reviewResponseMode: { type: "string", enum: ["analyze-only", "act"], default: "analyze-only" },
+      ...(ask ? {
+        question: { type: "string" },
+        attachedFiles: { type: "array", items: { type: "string" } },
+        maxFileSizeBytes: { type: "integer", minimum: 1 },
+        maxTotalPackageBytes: { type: "integer", minimum: 1 },
+      } : { runId: { type: "string", description: "Optional prepared run id; defaults to latest." } }),
+    },
+    required: ["repositoryPath", "provider", "model", ...(ask ? ["question"] : [])],
+    additionalProperties: false,
+  };
+}
+
+async function runLocalTool(value: unknown, ask: boolean, signal?: AbortSignal) {
+  const input = readObject(value);
+  const schema = localReviewSchema(ask);
+  for (const key of Object.keys(input)) {
+    if (!(key in schema.properties)) throw new Error(`Unsupported local inference argument: ${key}`);
+  }
+  const repositoryPath = path.resolve(readRequiredString(input, "repositoryPath"));
+  if (!existsSync(repositoryPath) || !statSync(repositoryPath).isDirectory()) throw new Error(`Repository path does not exist: ${repositoryPath}`);
+  const provider = readLocalProvider(readRequiredString(input, "provider"));
+  const model = readRequiredString(input, "model");
+  const options: Omit<LocalRunOptions, "requestPath" | "responsePath"> = {
+    provider, model, signal, baseUrl: readOptionalString(input, "baseUrl"),
+    timeoutMs: readOptionalPositiveNumber(input, "maxWaitMs"),
+    maxOutputTokens: readOptionalPositiveNumber(input, "maxOutputTokens"),
+    contextTokens: readOptionalPositiveNumber(input, "contextTokens"),
+    reasoning: readLocalReasoning(readOptionalString(input, "reasoning")),
+  };
+  const reviewResponseMode = readExternalReviewHandling(input) ?? "analyze-only";
+  let run: ReviewRun;
+  if (ask) {
+    const question = readRequiredString(input, "question");
+    const attachedFiles = readAttachedFiles({ repositoryPath,
+      files: readOptionalStringArray(input, "attachedFiles") ?? [],
+      maxFileSizeBytes: readOptionalPositiveNumber(input, "maxFileSizeBytes") ?? DEFAULT_MAX_FILE_SIZE_BYTES,
+      totalBudget: createContentBudget(readOptionalPositiveNumber(input, "maxTotalPackageBytes") ?? DEFAULT_MAX_TOTAL_PACKAGE_BYTES),
+    });
+    const prompt = buildAdvisoryQuestionPrompt(question, attachedFiles);
+    run = createReviewRun(repositoryPath);
+    writeFileSync(run.requestPath, prompt, "utf8");
+    const outbox = path.join(repositoryPath, ".giviloop", "outbox");
+    mkdirSync(outbox, { recursive: true });
+    writeFileSync(path.join(outbox, "external-review-request.md"), prompt, "utf8");
+    writeFileSync(path.join(run.runDir, "metadata.json"), JSON.stringify({
+      runId: run.runId, createdAt: new Date().toISOString(), mode: "advisory-question",
+      provider, model, question, attachedFiles: attachedFiles.map(file => file.path),
+      requestSha256: createHash("sha256").update(prompt).digest("hex"),
+    }, null, 2) + "\n");
+    writeLatestRunId(repositoryPath, run.runId);
+    pruneOldReviewRuns(repositoryPath, MAX_REVIEW_RUNS);
+  } else {
+    const runId = readOptionalRunId(input, "runId");
+    const selected = runId ? readReviewRunById(repositoryPath, runId) : readLatestReviewRun(repositoryPath);
+    if (!selected) throw new Error("No prepared GiviLoop run. Prepare a text review first or use givi_ask_local_llm.");
+    run = selected;
+    const metadata = readReviewRunMetadata(run);
+    if (readMetadataString(metadata, "mode") === "source-archive" || existsSync(path.join(run.runDir, "source-context.zip"))) {
+      throw new Error("Local inference accepts text context, not ZIP uploads. Use givi_ask_local_llm with attachedFiles, or prepare a diff review.");
+    }
+  }
+  const result = await sendLocalReview({ ...options, requestPath: run.requestPath, responsePath: run.responsePath });
+  if (readLatestReviewRun(repositoryPath)?.runId === run.runId) {
+    const inbox = path.join(repositoryPath, ".giviloop", "inbox");
+    mkdirSync(inbox, { recursive: true });
+    writeFileSync(path.join(inbox, "external-review-response.md"), result.responseText, "utf8");
+  }
+  const response = buildExternalReviewToolResponse({ repositoryPath, responsePath: run.responsePath,
+    responseText: result.responseText, reviewResponseMode });
+  response.content.unshift({ type: "text", text: `Local review completed. Run ID: ${run.runId}. Provider: ${result.provider}. Model: ${result.model}. Elapsed: ${result.elapsedMs} ms. Input/output tokens: ${result.inputTokens ?? "unknown"}/${result.outputTokens ?? "unknown"}. Usage is saved in local-usage.json.` });
+  return response;
+}
 
 function buildHelpToolResponse(): {
   content: Array<{ type: "text"; text: string }>;
@@ -537,13 +750,19 @@ function buildHelpToolResponse(): {
         text: [
           "GiviLoop help",
           "",
-          "GiviLoop is a local external-review loop for IDE coding agents.",
+          "GiviLoop brings a second review back to your coding agent: Double Check through web chat or local inference.",
+          "",
+          "Local inference:",
+          "- Use givi_local_models with provider=ollama, dwarfstar, llama-cpp, lmstudio or mlx to discover installed/loaded models.",
+          "- Use givi_ask_local_llm with provider, model, question and optional attachedFiles. No browser; no cloud fallback.",
+          "- Use givi_send_to_local_llm with provider, model and optional runId for a prepared text review. ZIP uploads are not supported.",
+          "- Local reasoning/context/output options are explicit. Completed runs save local-status.json and local-usage.json.",
           "",
           "Recommended IDE-agent flows:",
           "",
-          "1. Recommended repository review",
-          "- For a full tracked-file source archive, use the CLI-first flow: givi archive --repo /path/to/repo --goal \"Review the current implementation\" --send chatgpt-web --mode auto --no-untracked.",
-          "- Then use givi_read_external_review with reviewResponseMode=analyze-only or act.",
+          "1. Double Check current Git changes",
+          "- Prepare with givi_prepare_from_git, then givi_send_to_web_llm with mode=auto, background=true and the same runId.",
+          "- Read with givi_read_external_review, reviewResponseMode=analyze-only and the same runId; check each finding and report confirmed, dismissed or unverified with evidence. The host agent performs this verification.",
           "",
           "2. Review a specific file or pattern",
           "- Use givi_ask_web_llm with question plus attachedFiles, for example attachedFiles=[\"server.js\"].",
@@ -552,17 +771,27 @@ function buildHelpToolResponse(): {
           "",
           "3. Include IDE conversation context",
           "- Use givi_prepare_from_agent_context only when the user explicitly asks to include chat context or an implementation summary.",
-          "- Prefer git-only for cheaper, lower-context reviews.",
+          "- Prefer git-only when the current changes provide enough context. Web token savings are not measured.",
           "",
           "Important modes:",
+          "- background=true with mode=auto runs the complete exchange in standard Chrome with its window minimized. CLI: --background --mode auto.",
+          "- headless=true with mode=auto runs without a window; the provider can deny headless access. Do not combine headless and background.",
+          "- For initial sign-in use givi browser login in regular Chrome, then close that dedicated browser before sending. Use givi doctor to check the profile.",
+          "- modelSelection=require verifies the exact model label and its visible selection before sending. With prefer, an explicit warning reports any fallback.",
+          "- After SUBMISSION_UNCERTAIN or a response timeout, inspect the conversation before retrying; the prompt may already have been sent.",
           "- analyze-only: summarize and triage the external review without editing files.",
           "- act: treat the external review as advisory, apply only sensible fixes, run checks, and report accepted/rejected suggestions.",
           "",
           "Console equivalents:",
-          "- Recommended repository review: npm --prefix /path/to/GiviLoop run givi -- archive --repo /path/to/repo --goal \"Review the current implementation\" --send chatgpt-web --mode auto --no-untracked",
+          "- Full source archive (optional): npm --prefix /path/to/GiviLoop run givi -- archive --repo /path/to/repo --goal \"Review the current implementation\" --send chatgpt-web --mode auto --background --no-untracked",
           "- Ask about one file: npm --prefix /path/to/GiviLoop run givi -- ask --repo /path/to/repo --file server.js --question \"Review this endpoint pattern\" --send chatgpt-web --mode auto",
-          "- Advanced diff-only review: npm --prefix /path/to/GiviLoop run givi -- prepare --repo /path/to/repo --goal \"Review the current implementation\"",
+          "- Prepare current changes: npm --prefix /path/to/GiviLoop run givi -- prepare --repo /path/to/repo --goal \"Review the current implementation\"",
           "- Send latest prepared request: npm --prefix /path/to/GiviLoop run givi -- send --repo /path/to/repo --mode auto",
+          "",
+          "Costs and access:",
+          "- Web reviews make no separately billed model API call through GiviLoop; chat plan quotas and provider terms still apply. Total token savings are not measured.",
+          "- The ChatGPT browser adapter is experimental. OpenAI European terms prohibit automatic output extraction; technical success and MIT licensing do not establish permission.",
+          "- Manual copy/ingest and automatic local inference are also available. See docs/costs-and-access.md.",
           "",
           "Safety:",
           "- GiviLoop may send repository content, explicit file attachments, prompts, and optional IDE context to an external provider.",
@@ -643,6 +872,13 @@ function parseSendToWebLlmArgs(value: unknown): SendToWebLlmArgs {
     webProvider: readWebProvider(input),
     mode: readWebDeliveryMode(input),
     runId: readOptionalRunId(input, "runId"),
+    headless: readOptionalBoolean(input, "headless"),
+    background: readOptionalBoolean(input, "background"),
+    browserProfile: readOptionalString(input, "browserProfile"),
+    navigationTimeoutMs: readOptionalPositiveNumber(input, "navigationTimeoutMs"),
+    verificationWaitMs: readVerificationWait(input),
+    maxWaitMs: readOptionalPositiveNumber(input, "maxWaitMs"),
+    responseStableMs: readOptionalPositiveNumber(input, "responseStableMs"),
     model: readOptionalString(input, "model"),
     modelSelection: readModelSelection(input),
     reviewResponseMode: readExternalReviewHandling(input),
@@ -663,6 +899,13 @@ function parseAskWebLlmArgs(value: unknown): AskWebLlmArgs {
     ),
     webProvider: readWebProvider(input),
     mode: readWebDeliveryMode(input),
+    headless: readOptionalBoolean(input, "headless"),
+    background: readOptionalBoolean(input, "background"),
+    browserProfile: readOptionalString(input, "browserProfile"),
+    navigationTimeoutMs: readOptionalPositiveNumber(input, "navigationTimeoutMs"),
+    verificationWaitMs: readVerificationWait(input),
+    maxWaitMs: readOptionalPositiveNumber(input, "maxWaitMs"),
+    responseStableMs: readOptionalPositiveNumber(input, "responseStableMs"),
     model: readOptionalString(input, "model"),
     modelSelection: readModelSelection(input),
     reviewResponseMode: readExternalReviewHandling(input),
@@ -679,7 +922,7 @@ function parseReadExternalReviewArgs(value: unknown): ReadExternalReviewArgs {
   };
 }
 
-async function askWebLlm(args: AskWebLlmArgs): Promise<{
+async function askWebLlm(args: AskWebLlmArgs, signal?: AbortSignal): Promise<{
   repositoryPath: string;
   webProvider: WebProvider;
   requestPath: string;
@@ -738,15 +981,23 @@ async function askWebLlm(args: AskWebLlmArgs): Promise<{
 
   const mode = args.mode ?? "auto";
   const result = await sendToChatGptWeb({
+    signal,
     repositoryPath,
     requestPath: reviewRun.requestPath,
     responsePath: reviewRun.responsePath,
     mode,
+    headless: args.headless,
+    background: args.background,
+    userDataDir: args.browserProfile,
+    navigationTimeoutMs: args.navigationTimeoutMs,
+    verificationWaitMs: args.verificationWaitMs,
+    maxWaitMs: args.maxWaitMs,
+    responseStableMs: args.responseStableMs,
     model: args.model,
     modelSelection: args.modelSelection,
   });
 
-  if (result.responseText) {
+  if (result.responseText && readLatestReviewRun(repositoryPath)?.runId === reviewRun.runId) {
     writeFileSync(
       path.join(giviInboxDir, "external-review-response.md"),
       result.responseText,
@@ -770,6 +1021,7 @@ async function askWebLlm(args: AskWebLlmArgs): Promise<{
 
 async function sendPreparedReviewToWebLlm(
   args: SendToWebLlmArgs,
+  signal?: AbortSignal,
 ): Promise<{
   repositoryPath: string;
   webProvider: WebProvider;
@@ -811,10 +1063,11 @@ async function sendPreparedReviewToWebLlm(
     selectedRun?.responsePath ??
     path.join(inboxDir, "external-review-response.md");
 
-  ensureExternalReviewRequest({
-    legacyChatGptPromptPath,
-    externalReviewRequestPath,
-  });
+  if (selectedRun) {
+    if (!existsSync(externalReviewRequestPath)) throw new Error(`Request file not found for run ${selectedRun.runId}`);
+  } else {
+    ensureExternalReviewRequest({ legacyChatGptPromptPath, externalReviewRequestPath });
+  }
 
   const metadata = selectedRun ? readReviewRunMetadata(selectedRun) : undefined;
   const targetProvider = readMetadataString(metadata, "targetProvider");
@@ -830,16 +1083,24 @@ async function sendPreparedReviewToWebLlm(
     : [];
   const mode = args.mode ?? "prefill";
   const result = await sendToChatGptWeb({
+    signal,
     repositoryPath,
     requestPath: externalReviewRequestPath,
     responsePath: externalReviewResponsePath,
     attachmentPaths,
     mode,
+    headless: args.headless,
+    background: args.background,
+    userDataDir: args.browserProfile,
+    navigationTimeoutMs: args.navigationTimeoutMs,
+    verificationWaitMs: args.verificationWaitMs,
+    maxWaitMs: args.maxWaitMs,
+    responseStableMs: args.responseStableMs,
     model: args.model,
     modelSelection: args.modelSelection,
   });
 
-  if (result.responseText && selectedRun) {
+  if (result.responseText && selectedRun && readLatestReviewRun(repositoryPath)?.runId === selectedRun.runId) {
     writeFileSync(
       path.join(inboxDir, "external-review-response.md"),
       result.responseText,
@@ -966,24 +1227,9 @@ function resolveExternalReviewResponsePath(input: {
   latestRun: ReviewRun | undefined;
   fallbackResponsePath: string;
 }): string {
-  if (!input.latestRun) {
-    return input.fallbackResponsePath;
-  }
-
-  if (existsSync(input.latestRun.responsePath)) {
-    return input.latestRun.responsePath;
-  }
-
-  if (
-    existsSync(input.fallbackResponsePath) &&
-    existsSync(input.latestRun.requestPath) &&
-    statSync(input.fallbackResponsePath).mtimeMs >=
-      statSync(input.latestRun.requestPath).mtimeMs
-  ) {
-    return input.fallbackResponsePath;
-  }
-
-  return input.latestRun.responsePath;
+  // An inbox timestamp cannot prove which request a response belongs to.
+  // Keep inbox fallback only for legacy repositories without a selected run.
+  return input.latestRun?.responsePath ?? input.fallbackResponsePath;
 }
 
 function buildExternalReviewToolResponse(result: {
@@ -1214,7 +1460,7 @@ Skipped: ${budgetReason}
 `;
       }
 
-      return redactSecrets(fileDiff);
+      return redactSecrets(fileDiff, file);
     })
     .filter(Boolean)
     .join("\n");
@@ -1584,7 +1830,7 @@ Skipped: ${budgetReason}
 `;
         }
 
-        const content = redactSecrets(readFileSync(safeFile.absolutePath, "utf8"));
+        const content = redactSecrets(readFileSync(safeFile.absolutePath, "utf8"), safeFile.absolutePath);
 
         return `### ${safeFile.normalizedPath}
 
@@ -1667,7 +1913,7 @@ function readAttachedFiles(input: {
 
       return {
         path: safeFile.normalizedPath,
-        content: redactSecrets(readFileSync(safeFile.absolutePath, "utf8")),
+        content: redactSecrets(readFileSync(safeFile.absolutePath, "utf8"), safeFile.absolutePath),
       };
     } catch {
       return {
@@ -1715,28 +1961,6 @@ function shouldOmitFileContent(file: string): boolean {
     ".p12",
     ".pfx",
   ].includes(extension);
-}
-
-function redactSecrets(value: string): string {
-  return value
-    .replace(
-      /(["']?(?:api[_-]?key|token|secret|password|passwd|pwd)["']?\s*[:=]\s*)["']?[^"',\s}]+/gi,
-      "$1[REDACTED]",
-    )
-    .replace(
-      /(["']?(?:DATABASE_URL|REDIS_URL|POSTGRES_URL|MYSQL_URL)["']?\s*[:=]\s*)["']?[^"',\s}]+/g,
-      "$1[REDACTED]",
-    )
-    .replace(/(authorization\s*:\s*bearer\s+)[^\s]+/gi, "$1[REDACTED]")
-    .replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, "[REDACTED_AWS_ACCESS_KEY_ID]")
-    .replace(/\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g, "gh[REDACTED]")
-    .replace(/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, "github_pat_[REDACTED]")
-    .replace(/\bnpm_[A-Za-z0-9]{36,}\b/g, "npm_[REDACTED]")
-    .replace(/sk-[A-Za-z0-9_-]{20,}/g, "sk-[REDACTED]")
-    .replace(
-      /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
-      "[REDACTED PRIVATE KEY]",
-    );
 }
 
 function createContentBudget(maxBytes: number): ContentBudget {
@@ -2082,21 +2306,7 @@ function readReviewRunById(repositoryPath: string, runId: string): ReviewRun {
 }
 
 function pruneOldReviewRuns(repositoryPath: string, maxRuns: number): void {
-  const runsDir = path.join(repositoryPath, ".giviloop", "runs");
-
-  if (!existsSync(runsDir)) {
-    return;
-  }
-
-  const runs = readdirSync(runsDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort()
-    .reverse();
-
-  for (const runId of runs.slice(maxRuns)) {
-    rmSync(path.join(runsDir, runId), { recursive: true, force: true });
-  }
+  pruneCompletedRuns(repositoryPath, maxRuns);
 }
 
 function writeClipboard(value: string): void {
