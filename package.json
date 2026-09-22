@@ -41,7 +41,8 @@
     "examples/double-check/verify.mjs",
     "docs/demo.md",
     "docs/e2e-validation-2026-09-21.md",
-    "docs/releases/0.3.1.md"
+    "docs/releases/0.3.1.md",
+    "docs/capabilities-and-validation-2026-09-22.md"
   ],
   "engines": {
     "node": ">=20"

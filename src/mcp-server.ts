@@ -294,7 +294,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: TOOL_SEND_TO_WEB_LLM,
         description:
-          "Launch a local web LLM bridge for an already prepared GiviLoop review request. If the selected run is a source archive, attach its source-context.zip automatically. Use webProvider to choose the web UI; chatgpt-web is implemented first, claude-web is reserved for the Claude web bridge.",
+          "Launch a local web LLM bridge for an already prepared GiviLoop review request. If the selected run is a source archive, attach its source-context.zip automatically. The automatic provider is chatgpt-web. Anonymous sessions work when the website allows them; otherwise login is required. Claude currently uses manual copy/ingest only.",
         inputSchema: {
           type: "object",
           properties: {
@@ -305,9 +305,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             webProvider: {
               type: "string",
-              enum: ["chatgpt-web", "claude-web"],
+              enum: ["chatgpt-web"],
               description:
-                "Web UI provider to launch. chatgpt-web is currently implemented; claude-web is the planned Claude web bridge.",
+                "Automatic web provider. Only chatgpt-web is implemented; Claude requires manual copy/ingest.",
               default: "chatgpt-web",
             },
             mode: {
@@ -320,12 +320,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             headless: {
               type: "boolean",
               description:
-                "Run without a browser window. Requires mode=auto; provider access may require login. Headless access can be denied independently of visible access.",
+                "Diagnostic option, requires mode=auto. Currently blocked by ChatGPT verification with and without login; use background=true for live reviews.",
               default: false,
             },
             background: {
               type: "boolean", default: false,
-              description: "Use standard Chrome in a minimized window. Requires mode=auto and headless=false.",
+              description: "Use standard Chrome in a minimized window; shown at startup or for file uploads. Requires mode=auto and headless=false.",
             },
             browserProfile: {
               type: "string",
@@ -394,12 +394,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             headless: {
               type: "boolean",
               description:
-                "Run without a browser window. Requires mode=auto; provider access may require login. Headless access can be denied independently of visible access.",
+                "Diagnostic option, requires mode=auto. Currently blocked by ChatGPT verification with and without login; use background=true for live reviews.",
               default: false,
             },
             background: {
               type: "boolean", default: false,
-              description: "Use standard Chrome in a minimized window. Requires mode=auto and headless=false.",
+              description: "Use standard Chrome in a minimized window; shown at startup or for file uploads. Requires mode=auto and headless=false.",
             },
             browserProfile: {
               type: "string",
@@ -511,9 +511,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             webProvider: {
               type: "string",
-              enum: ["chatgpt-web", "claude-web"],
+              enum: ["chatgpt-web"],
               description:
-                "Web UI provider to launch. chatgpt-web is currently implemented; claude-web is the planned Claude web bridge.",
+                "Automatic web provider. Only chatgpt-web is implemented; Claude requires manual copy/ingest.",
               default: "chatgpt-web",
             },
             mode: {
@@ -526,12 +526,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             headless: {
               type: "boolean",
               description:
-                "Run without a browser window. Requires mode=auto; provider access may require login. Headless access can be denied independently of visible access.",
+                "Diagnostic option, requires mode=auto. Currently blocked by ChatGPT verification with and without login; use background=true for live reviews.",
               default: false,
             },
             background: {
               type: "boolean", default: false,
-              description: "Use standard Chrome in a minimized window. Requires mode=auto and headless=false.",
+              description: "Use standard Chrome in a minimized window; shown at startup or for file uploads. Requires mode=auto and headless=false.",
             },
             browserProfile: {
               type: "string",

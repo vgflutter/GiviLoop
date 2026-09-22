@@ -7,7 +7,7 @@ GiviLoop sends selected code or Git changes to a second reviewer and brings the 
 CLI + MCP · Web chat + local models · Open source · MIT
 
 - **Double Check:** have your agent verify another model's findings before changing code.
-- **Save API tokens on the second review:** use your existing web chat instead of making another token-billed model API call. GiviLoop sends the selected context and brings back the answer.
+- **Save API tokens on the second review:** use available web chat access instead of making another token-billed model API call. GiviLoop sends the selected context and brings back the answer; no model API key is required.
 
 **What “token savings” means:** if you would otherwise buy that review through an API, this avoids its separate API input/output token charges. The web chat still uses its plan's quotas, and your coding agent still uses tokens to prepare context and check the answer. **Total token savings are not measured.** [Costs and access](docs/costs-and-access.md).
 
@@ -26,10 +26,12 @@ git clone https://github.com/vgflutter/GiviLoop.git
 cd GiviLoop
 npm ci
 npm run build
-npm run givi -- browser login
-# Sign in, then close the dedicated Chrome window.
 npm run givi -- browser check
+```
 
+**With or without login:** GiviLoop can use ChatGPT anonymously when the website offers a usable chat. If login is required, run `npm run givi -- browser login`, sign in, quit that dedicated Chrome, then repeat the check. Availability and limits are controlled by the website.
+
+```sh
 npm run givi -- ask --repo . --file examples/double-check/sum.ts \
   --question "Find a concrete bug, the smallest fix and regression tests." \
   --send chatgpt-web --mode auto --background
@@ -37,9 +39,11 @@ npm run givi -- ask --repo . --file examples/double-check/sum.ts \
 
 GiviLoop saves the answer and prints its path. The example's `sum([])` should return zero but throws; ask your agent to check the finding before applying the fix. Run `node examples/double-check/verify.mjs` to reproduce this example independently.
 
-**Web access is experimental.** Background mode uses a minimized Chrome window; login or human verification can still be required. Headless remains blocked in the tested session. OpenAI's European terms prohibit automatic output extraction; technical success and MIT licensing do not establish permission. [Costs and access](docs/costs-and-access.md).
+**Do not use `--headless` for ChatGPT:** it is currently unsupported in practice; live checks were blocked by site verification both with and without login. Use `--background`, which minimizes Chrome but can show a window at startup or during file uploads. Human verification may still require your action.
 
-For manual web transfer, prepare without `--send`, then use `givi copy --open` and `givi ingest` around your own paste/send/copy actions. For automatic local reviews, use [Ollama](docs/ollama.md), [llama.cpp, LM Studio or MLX](docs/local-engines.md). [DwarfStar](docs/dwarfstar.md) is also available, with trained-model validation still pending.
+**Web access is experimental.** OpenAI's European terms prohibit automatic output extraction; technical success, anonymous access and MIT licensing do not establish permission. [Costs and access](docs/costs-and-access.md).
+
+**Claude currently supports manual transfer only; its automatic adapter is not implemented.** Prepare without `--send` (add `--target-provider claude-chat` for Claude), then use `givi copy --open` and `givi ingest` around your own paste/send/copy actions. For automatic local reviews, use [Ollama](docs/ollama.md), [llama.cpp, LM Studio or MLX](docs/local-engines.md). [DwarfStar](docs/dwarfstar.md) is also available, with trained-model validation still pending.
 
 ## Use it from your coding agent
 
@@ -71,7 +75,7 @@ The coding agent performs the verification. GiviLoop handles context and review 
 ## Install, learn, contribute
 
 - [Latest release and installable package](https://github.com/vgflutter/GiviLoop/releases/latest) · [CLI/MCP reference](docs/usage.md)
-- [Troubleshooting](docs/troubleshooting.md) · [Validation and known limits](docs/releases/0.3.1.md) · [Latest end-to-end checks](docs/e2e-validation-2026-09-21.md)
+- [Capabilities, live results and adoption assessment](docs/capabilities-and-validation-2026-09-22.md) · [Troubleshooting](docs/troubleshooting.md) · [Release limits](docs/releases/0.3.1.md)
 - [Report a bug or a Double Check experience](https://github.com/vgflutter/GiviLoop/issues/new/choose) · [Contributing](CONTRIBUTING.md) · [Roadmap](docs/roadmap.md)
 
 Add `.giviloop/` to the reviewed repository's `.gitignore`: run files can contain source and prompts. Redaction is best effort. [Data handling](docs/usage.md#safety-and-legal).

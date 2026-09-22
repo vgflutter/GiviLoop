@@ -92,12 +92,15 @@ test("a new Chrome window acknowledges an old crash marker and preserves the log
   assert.equal(diagnoseBrowser(profile).previousExit, "Normal", "the next background session must also close cleanly");
 });
 
-function pageFixture({ archive = false, incomplete = false, legacy = false, model = false, missingModel = false, confirmModel = true } = {}) {
+function pageFixture({ archive = false, incomplete = false, legacy = false, model = false, missingModel = false, confirmModel = true, anonymous = false, loginRequired = false, mediaInputs = false, mediaOnly = false, delayedUpload = false } = {}) {
   return `<!doctype html><html><head><style>#conversation li div { white-space: pre-wrap; }</style></head><body>
   <textarea style="display:none"></textarea>
-  <textarea id="input"></textarea>
-  <button data-testid="composer-plus-btn" onclick="document.querySelector('input[type=file]').click()">Attach</button>
-  <input type="file" multiple hidden><div id="uploads"></div>
+  <textarea id="input" ${loginRequired ? "hidden" : ""}></textarea>
+  ${anonymous || loginRequired ? '<button>Log in</button>' : ''}
+  <button data-testid="composer-plus-btn" ${mediaInputs ? "hidden" : ""}
+    ${delayedUpload ? 'aria-haspopup="menu" aria-expanded="false" onclick="if(window.uploaderReady)this.setAttribute(\'aria-expanded\',\'true\')"' : 'onclick="document.querySelector(\'input[type=file]\').click()"'}>Attach</button>
+  <input type="file" multiple ${mediaOnly ? "disabled" : ""} hidden><div id="uploads"></div>
+  ${mediaInputs ? '<input type="file" multiple accept="image/*" disabled hidden><input type="file" multiple accept="image/*,video/*" hidden onchange="window.captureSubmission({actionDetail:\'wrong-media-input\'})">' : ''}
   <button data-testid="composer-submit-button" ${archive ? "disabled" : ""}>Send</button>
   <button data-testid="stop-button" hidden>Stop</button>
   ${model ? `<button data-testid="model-switcher-dropdown-button" onclick="document.querySelector('[role=menu]').hidden=false">GPT Base</button>
@@ -111,10 +114,14 @@ function pageFixture({ archive = false, incomplete = false, legacy = false, mode
     document.querySelector('[role=menu]').hidden=true;
   });
   document.addEventListener('keydown',event=>{if(event.key==='Escape' && document.querySelector('[role=menu]')) document.querySelector('[role=menu]').hidden=true;});
-  document.querySelector('input[type=file]').onchange=e=>{
+  const acceptUpload=e=>{
     document.querySelector('#uploads').textContent=[...e.target.files].map(file=>file.name).join(' ');
     setTimeout(()=>{uploadsReady=true;document.querySelector('[data-testid=composer-submit-button]').disabled=false;},400);
   };
+  if (${delayedUpload}) {
+    document.querySelector('input[type=file]').onchange=()=>window.captureSubmission({actionDetail:'premature-upload'});
+    setTimeout(()=>{window.uploaderReady=true;document.querySelector('input[type=file]').onchange=acceptUpload;},1500);
+  } else document.querySelector('input[type=file]').onchange=acceptUpload;
   document.querySelector('[data-testid=composer-submit-button]').onclick=()=>{
     window.captureSubmission({prompt:document.querySelector('#input').value,uploadsReady,files:[...document.querySelector('input[type=file]').files].map(file=>file.name),model:document.querySelector('[data-testid=model-switcher-dropdown-button]')?.textContent,menuOpen:document.querySelector('[role=menu]')?.hidden===false});
     const item=document.createElement('li');
@@ -191,6 +198,38 @@ test("browser check inspects a usable composer without creating or sending a rev
   assert.equal(report.ready, true);
   assert.equal(report.submitted, false);
   assert.equal(report.authentication, "unknown");
+  assert.equal(f.events().filter(event => event.action === "submit").length, 0);
+  assert.equal(existsSync(path.join(f.repo, ".giviloop/latest-run-id")), false);
+});
+
+test("anonymous chat with a login button supports check, CLI auto send and saved response", { timeout: 30_000 }, async t => {
+  const f = setup(t, { anonymous: true });
+  const probe = await cli(f, "browser", ["check", "--browser-profile", f.profile]);
+  assert.equal(probe.code, 0, probe.stderr);
+  const access = JSON.parse(probe.stdout);
+  assert.equal(access.ready, true);
+  assert.equal(access.authentication, "anonymous");
+  assert.equal(access.sessionCookieReadable, false);
+  assert.equal(f.events().filter(event => event.action === "submit").length, 0);
+  const sent = await cli(f, "ask", ["--question", "Review this anonymous fixture", "--send", "chatgpt-web",
+    "--mode", "auto", "--background", "--browser-profile", f.profile, "--response-stable-ms", "500"]);
+  assert.equal(sent.code, 0, sent.stderr);
+  const run = f.latest();
+  assert.equal(readFileSync(run.response, "utf8"), answer);
+  const status = JSON.parse(readFileSync(path.join(run.dir, "browser-status.json"), "utf8"));
+  assert.equal(status.outcome, "completed");
+  assert.equal(status.submitted, true);
+  assert.equal(f.events().filter(event => event.action === "submit").length, 1);
+});
+
+test("a login wall without an editable composer is reported without submitting", { timeout: 15_000 }, async t => {
+  const f = setup(t, { loginRequired: true });
+  const probe = await cli(f, "browser", ["check", "--browser-profile", f.profile, "--navigation-timeout-ms", "1000"]);
+  assert.equal(probe.code, 1, probe.stderr);
+  const access = JSON.parse(probe.stdout);
+  assert.equal(access.ready, false);
+  assert.equal(access.errorCode, "LOGIN_REQUIRED");
+  assert.equal(access.submitted, false);
   assert.equal(f.events().filter(event => event.action === "submit").length, 0);
   assert.equal(existsSync(path.join(f.repo, ".giviloop/latest-run-id")), false);
 });
@@ -286,13 +325,13 @@ test("CLI auto -> real headless browser -> saved response -> MCP read", { timeou
   assert.ok(read.content.some(item => item.type === "text" && item.text.includes(answer)));
 });
 
-test("MCP sends a real source archive only when uploads are ready", { timeout: 30_000 }, async t => {
-  const f = setup(t, { archive: true });
+for (const variant of [{}, { mediaInputs: true }, { delayedUpload: true, background: true }]) test(`MCP sends a source archive only when uploads are ready${variant.mediaInputs ? "; skips photo/video inputs" : variant.delayedUpload ? "; background waits for interactive controls" : ""}`, { timeout: 30_000 }, async t => {
+  const f = setup(t, { archive: true, ...variant });
   const prepared = await cli(f, "archive", ["--goal", "Review source", "--no-untracked"]);
   assert.equal(prepared.code, 0, prepared.stderr);
   const client = await connect(t, f);
   const result = await client.callTool({ name: "givi_send_to_web_llm", arguments: {
-    repositoryPath: f.repo, runId: f.latest().id, mode: "auto", headless: true,
+    repositoryPath: f.repo, runId: f.latest().id, mode: "auto", headless: !variant.background, background: Boolean(variant.background),
     browserProfile: f.profile, responseStableMs: 200, maxWaitMs: 5000,
   } });
   assert.notEqual(result.isError, true, JSON.stringify(result));
@@ -301,6 +340,18 @@ test("MCP sends a real source archive only when uploads are ready", { timeout: 3
   assert.equal(submissions.length, 1);
   assert.equal(submissions[0].uploadsReady, true);
   assert.deepEqual(submissions[0].files, ["source-context.zip"]);
+});
+
+test("archive upload refuses disabled and media-only inputs before sending", { timeout: 15_000 }, async t => {
+  const f = setup(t, { archive: true, mediaInputs: true, mediaOnly: true });
+  const prepared = await cli(f, "archive", ["--goal", "Review source", "--no-untracked"]);
+  assert.equal(prepared.code, 0, prepared.stderr);
+  const sent = await cli(f, "send", ["--mode", "auto", "--headless", "--browser-profile", f.profile]);
+  assert.equal(sent.code, 1);
+  assert.match(sent.stderr, /ATTACHMENT_UNAVAILABLE/);
+  assert.equal(f.events().filter(event => event.action === "submit").length, 0);
+  assert.equal(existsSync(f.latest().response), false);
+  assert.equal(JSON.parse(readFileSync(path.join(f.latest().dir, "browser-status.json"), "utf8")).submitted, false);
 });
 
 test("a paused current response times out without saving or repeating the send", { timeout: 30_000 }, async t => {

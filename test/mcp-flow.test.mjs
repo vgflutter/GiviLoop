@@ -131,6 +131,9 @@ test("MCP validates background and response timing parameters before browser lau
     assert.equal(schema.background.type, "boolean");
     assert.equal(schema.maxWaitMs.type, "number");
     assert.equal(schema.browserProfile.type, "string");
+    if (name !== "givi_send_to_chatgpt_web") {
+      assert.deepEqual(schema.webProvider.enum, ["chatgpt-web"], "unimplemented Claude automation must not be offered as an available provider");
+    }
   }
   await rejectsTool(client, "givi_send_to_web_llm", { repositoryPath: f.repo, background: true, headless: true, mode: "auto" }, /cannot be combined/);
   await rejectsTool(client, "givi_send_to_web_llm", { repositoryPath: f.repo, background: true, mode: "prefill" }, /requires mode=auto/);

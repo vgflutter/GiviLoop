@@ -1982,7 +1982,7 @@ Commands:
   browser login
             Open regular Chrome for initial sign-in. Close it before sending.
   browser check
-            Probe website access without sending a prompt; supports --headless.
+            Check access with or without login, without sending a prompt.
   help      Show this help.
 
 Important options:
@@ -2005,8 +2005,8 @@ Important options:
                             Local reasoning control; model/runtime must support the value.
   --mode prefill|submit|auto
                             prefill only fills the prompt; submit sends it; auto waits and saves the answer.
-  --headless                Run without a browser window. Requires --mode auto; provider access may require login.
-  --background              Use a minimized Chrome window. Requires auto; incompatible with --headless.
+  --headless                Diagnostic option; currently blocked by ChatGPT verification. Use --background.
+  --background              Minimize Chrome; shown at startup or for uploads. Requires auto; incompatible with --headless.
   --verification-wait-ms N  Wait for your verification tap (default 180000 headed, 0 headless; maximum 900000).
   --browser-profile PATH    Dedicated Chrome profile shared by browser login and send.
   --navigation-timeout-ms N

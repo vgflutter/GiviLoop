@@ -16,7 +16,19 @@ npm install -g /path/to/giviloop-0.3.1.tgz
 
 The package exposes `givi` and `givi-mcp`. Node.js 20+ is required; use Git for diff/archive flows, `zip` for archives, and a separately installed runtime with compatible weights for local inference. Clipboard flows use macOS/Windows system utilities, or `wl-clipboard`/`xclip` on Linux. Google Chrome is only needed for web automation.
 
-GiviLoop uses the dedicated profile `~/.giviloop/browser-profiles/chatgpt`. Run `givi browser login` for initial authentication, then close that Chrome before automation opens the profile. `givi browser check` tests access without submitting a prompt.
+GiviLoop uses the dedicated profile `~/.giviloop/browser-profiles/chatgpt`. Start with `givi browser check`, which tests access without submitting a prompt. A usable anonymous composer is sufficient; the presence of a login button does not by itself require sign-in. If the website requires authentication, run `givi browser login`, sign in, then quit that Chrome before automation opens the profile. GiviLoop does not create accounts or bypass login requirements.
+
+To test without changing an existing login, pass a new dedicated path to both commands:
+
+```sh
+npm run givi -- browser check --browser-profile "$HOME/.giviloop/browser-profiles/chatgpt-anonymous"
+npm run givi -- ask --repo . --file examples/double-check/sum.ts \
+  --question "Find a concrete bug and its smallest fix." \
+  --send chatgpt-web --mode auto --background \
+  --browser-profile "$HOME/.giviloop/browser-profiles/chatgpt-anonymous"
+```
+
+That profile remains anonymous only while nobody signs into it. Availability, quotas and features depend on the website; successful anonymous and authenticated reviews are recorded in the [current validation report](capabilities-and-validation-2026-09-22.md). Claude currently has a manual copy/ingest flow only, and the live anonymous check redirected to login.
 
 ## Local Inference
 
@@ -116,14 +128,14 @@ For an existing request:
 
 Visible sessions use native Chrome with a temporary loopback DevTools connection and the existing dedicated profile. GiviLoop waits for the browser process to exit on completion or cancellation. This startup path resolved the observed 403 in real authenticated CLI/MCP trials; see the [validation](chatgpt-403-resolution-2026-09-21.md).
 
-When provider access is available, the exchange is automatic: fill the prompt, attach files when present, send once, wait for a completed response, save it, and close Chrome. No clipboard interaction is required. A window may briefly appear at startup. If the site requires human verification, GiviLoop restores the window and waits for your action before proceeding. GiviLoop checks that minimization succeeded and stops if the environment does not support it.
+When provider access is available, the exchange is automatic: fill the prompt, attach files when present, send once, wait for a completed response, save it, and close Chrome. No clipboard interaction is required. A window may briefly appear at startup. ZIP uploads temporarily show Chrome so its attachment controls can initialize; GiviLoop minimizes it again before sending. Text-only reviews do not require this upload step. If the site requires human verification, GiviLoop restores the window and waits for your action before proceeding. GiviLoop checks that minimization succeeded and stops if the environment does not support it.
 
 For MCP, pass `background: true` and `mode: "auto"` to `givi_send_to_web_llm`, `givi_send_to_chatgpt_web`, or `givi_ask_web_llm`. For example:
 
     Use GiviLoop to ask ChatGPT to review server.js, with background true,
     mode auto, and reviewResponseMode analyze-only. Read the saved response.
 
-`--headless` / MCP `headless: true` runs without a window and is a separate option. It requires `auto` and cannot be combined with `background`. The live headless trial received HTTP 403; headless availability must not be assumed from a working visible session. GiviLoop reports an access denial and stops rather than retrying it automatically.
+`--headless` / MCP `headless: true` runs without a window and is a separate option. It requires `auto` and cannot be combined with `background`. **Do not use it for ChatGPT at present:** live checks with both authenticated and anonymous profiles were blocked by site verification; earlier trials received HTTP 403. The flag remains available for diagnostics, and passing local browser fixtures does not establish live support. Use `--background`. GiviLoop reports the block and stops rather than retrying it automatically.
 
 Both modes reuse the dedicated profile. Use `--browser-profile PATH` / MCP `browserProfile` for another **dedicated** profile, and pass the same path to `browser login`. Do not run two browser jobs on one profile at the same time. See [troubleshooting](troubleshooting.md) for login, blank windows, busy profiles, and provider errors.
 

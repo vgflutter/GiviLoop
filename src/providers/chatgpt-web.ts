@@ -170,7 +170,12 @@ export async function sendToChatGptWeb(
     checkCancelled();
     if (attachmentPaths.length > 0) {
       record("uploading");
+      if (background) {
+        console.error("GiviLoop: showing Chrome for file upload; it will minimize again before sending.");
+        await showBrowser(context, page);
+      }
       await uploadAttachments(page, attachmentPaths, providerUrl);
+      if (background) await minimizeBrowser(context, page);
     }
     record("filling");
     checkCancelled();
@@ -248,6 +253,17 @@ async function uploadAttachments(
   attachmentPaths: string[],
   providerUrl: string,
 ): Promise<void> {
+  await waitForAttachmentControls(page, providerUrl);
+  // The current UI also exposes photo, camera and media-only inputs. Choosing
+  // the last input can silently discard a ZIP and leave confirmation waiting.
+  let fileInput = await compatibleFileInput(page, attachmentPaths);
+  if (fileInput) {
+    assertChatOrigin(page, providerUrl);
+    try { await fileInput.setInputFiles(attachmentPaths, { timeout: 10_000 }); }
+    catch { throw new BrowserRunError("ATTACHMENT_UNAVAILABLE", "Unable to attach files in ChatGPT. No prompt was sent; files were not uploaded again."); }
+    await waitForUploadedAttachmentNames(page, attachmentPaths);
+    return;
+  }
   const attachSelectors = [
     '[data-testid="composer-plus-btn"]',
     'button[aria-label="Add photos and files"]',
@@ -273,16 +289,54 @@ async function uploadAttachments(
     return;
   }
 
-  const fileInput = page.locator('input[type="file"]').last();
+  fileInput = await compatibleFileInput(page, attachmentPaths);
 
   try {
     assertChatOrigin(page, providerUrl);
+    if (!fileInput) throw new Error("No enabled file input accepts these attachments.");
     await fileInput.setInputFiles(attachmentPaths, { timeout: 10_000 });
   } catch (error) {
     if (error instanceof BrowserRunError) throw error;
     throw new BrowserRunError("ATTACHMENT_UNAVAILABLE", "Unable to attach files in ChatGPT. The web UI may have changed or file upload may not be available for this chat. No prompt was sent.");
   }
   await waitForUploadedAttachmentNames(page, attachmentPaths);
+}
+
+async function compatibleFileInput(page: Page, attachmentPaths: string[]): Promise<Locator | undefined> {
+  const inputs = page.locator('input[type="file"]:not(:disabled):not([capture])');
+  const mimeTypes: Record<string, string> = { ".zip": "application/zip", ".json": "application/json" };
+  for (let index = 0; index < await inputs.count(); index++) {
+    const input = inputs.nth(index);
+    if (attachmentPaths.length > 1 && await input.getAttribute("multiple") === null) continue;
+    const accept = (await input.getAttribute("accept") ?? "").toLowerCase().split(",").map(value => value.trim()).filter(Boolean);
+    if (accept.length === 0 || attachmentPaths.every(file => {
+      const extension = path.extname(file).toLowerCase(), mime = mimeTypes[extension];
+      return accept.some(value => value === "*/*" || value === extension || (mime &&
+        (value === mime || (value.endsWith("/*") && mime.startsWith(value.slice(0, -1))))));
+    })) return input;
+  }
+  return undefined;
+}
+
+async function waitForAttachmentControls(page: Page, providerUrl: string): Promise<void> {
+  assertChatOrigin(page, providerUrl);
+  const button = page.locator('[data-testid="composer-plus-btn"]').first();
+  if (!await button.isVisible() || await button.getAttribute("aria-haspopup") !== "menu") return;
+  // SSR can expose an enabled file input before its change handler is attached.
+  // Observe a working UI interaction before uploading; never replay an upload.
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    assertChatOrigin(page, providerUrl);
+    const blocker = await pageBlocker(page);
+    if (blocker) throw blocker;
+    if (await button.getAttribute("aria-expanded") === "true") {
+      await page.keyboard.press("Escape");
+      return;
+    }
+    await button.click({ timeout: 1_000 }).catch(() => {});
+    await page.waitForTimeout(250);
+  }
+  throw new BrowserRunError("ATTACHMENT_UNAVAILABLE", "The attachment control did not become interactive. No files or prompt were sent.");
 }
 
 async function openAttachmentFileChooser(

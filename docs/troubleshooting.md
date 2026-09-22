@@ -35,9 +35,9 @@ Do not remove `SingletonLock` while Chrome owns the profile, copy active profile
 
 ## Background versus headless
 
-`--background --mode auto` runs normal Chrome and verifies that the window is minimized. A brief startup window can appear. It requires a desktop session capable of minimizing windows.
+`--background --mode auto` runs normal Chrome and verifies that the window is minimized. A startup window can appear; ZIP uploads also temporarily show Chrome to initialize its attachment controls, then minimize it again before sending. It requires a desktop session capable of minimizing windows.
 
-`--headless --mode auto` does not create a visible window. The provider may treat it differently: the release trial received HTTP 403 before a prompt was sent. GiviLoop stops on that response. It does not silently switch modes, hide automation flags, retry rate limits, or bypass an account challenge.
+`--headless --mode auto` does not create a visible window. **It is currently unusable for live ChatGPT reviews:** the release trial received HTTP 403, and the 22 September checks were challenged with both authenticated and anonymous profiles. No prompt was sent. Use `--background`. GiviLoop stops on the block; it does not silently switch modes, hide automation flags, retry rate limits, or bypass an account challenge.
 
 Neither mode performs interactive login. They cannot be combined. `prefill` and `submit` require a visible window because they leave further work to the user.
 

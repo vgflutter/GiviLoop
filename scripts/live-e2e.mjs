@@ -1,5 +1,6 @@
 // Opt-in checks against actual providers. Sends synthetic code only.
-// node scripts/live-e2e.mjs --web | --local
+// node scripts/live-e2e.mjs --web | --local [--output PATH]
+// --web also accepts --browser-profile PATH for an isolated anonymous profile.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -7,12 +8,18 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-const mode = process.argv[2];
-assert.ok(['--web', '--local'].includes(mode), 'Choose --web (authenticated ChatGPT) or --local (four configured local runtimes).');
+const { values } = parseArgs({ options: {
+  web: { type: 'boolean' }, local: { type: 'boolean' },
+  output: { type: 'string' }, 'browser-profile': { type: 'string' },
+} });
+assert.ok(Boolean(values.web) !== Boolean(values.local), 'Choose exactly one of --web (available ChatGPT session) or --local (four configured local runtimes).');
+assert.ok(!values.local || !values['browser-profile'], '--browser-profile applies only to --web.');
+const mode = values.web ? '--web' : '--local';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const output = path.join(root, '.giviloop/diagnostics/readme-refresh');
+const output = values.output ? path.resolve(values.output) : path.join(root, '.giviloop/diagnostics/readme-refresh');
 mkdirSync(output, { recursive: true });
 const repo = mkdtempSync(path.join(os.tmpdir(), 'giviloop-live-e2e-'));
 const client = new Client({ name: 'giviloop-live-e2e', version: '1.0.0' }, { capabilities: {} });
@@ -38,7 +45,9 @@ try {
     await call('givi_prepare_from_git', { repositoryPath: repo, taskGoal: 'Review the changes for a concrete regression. Contract: a nonnegative count returns up to the last count items; zero returns an empty array. Negative counts throw. Suggest a minimal fix and regression cases. Keep the response concise.' });
     const run = latest();
     const started = Date.now();
-    await call('givi_send_to_web_llm', { repositoryPath: repo, runId: run.runId, webProvider: 'chatgpt-web', mode: 'auto', background: true, maxWaitMs: 120000, reviewResponseMode: 'analyze-only' });
+    await call('givi_send_to_web_llm', { repositoryPath: repo, runId: run.runId, webProvider: 'chatgpt-web', mode: 'auto', background: true,
+      ...(values['browser-profile'] ? { browserProfile: path.resolve(values['browser-profile']) } : {}),
+      maxWaitMs: 120000, verificationWaitMs: 0, reviewResponseMode: 'analyze-only' });
     const response = readFileSync(path.join(run.dir, 'external-review-response.md'), 'utf8');
     const status = JSON.parse(readFileSync(path.join(run.dir, 'browser-status.json'), 'utf8'));
     const read = await call('givi_read_external_review', { repositoryPath: repo, runId: run.runId, reviewResponseMode: 'analyze-only' });
