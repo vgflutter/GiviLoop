@@ -43,7 +43,7 @@ GiviLoop saves the answer and prints its path. The example's `sum([])` should re
 
 **Web access is experimental.** OpenAI's European terms prohibit automatic output extraction; technical success, anonymous access and MIT licensing do not establish permission. [Costs and access](docs/costs-and-access.md).
 
-**More browser chats, no API keys:** `--send gemini-web` has completed real anonymous reviews. `deepseek-web` and `claude-web` are experimental adapters with fixture tests; their authenticated generation is still unverified. Run `browser login --provider NAME` if needed, quit that Chrome, then `browser check --provider NAME`. New adapters accept inline text (`ask --file` / `prepare`); automated ZIP uploads and model selection remain ChatGPT-only. [Commands and validation](docs/web-providers.md).
+**More browser chats, no API keys:** `--send gemini-web` has completed real anonymous reviews. `deepseek-web` and `claude-web` have completed real signed-in reviews, including Claude Free. These adapters remain experimental; DeepSeek produced a false positive on a corrected-code control, so verify findings before applying changes. Run `browser login --provider NAME` if needed, quit that Chrome, then `browser check --provider NAME`. New adapters accept inline text (`ask --file` / `prepare`); automated ZIP uploads and model selection remain ChatGPT-only. [Commands and validation](docs/web-providers.md).
 
 Manual `copy --open` / `ingest` works with all four prompt formats. [Local models](docs/local-engines.md) and [Ollama](docs/ollama.md) remain available; [DwarfStar](docs/dwarfstar.md) trained-model validation is pending.
 

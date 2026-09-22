@@ -28,6 +28,29 @@ export async function otherSendControl(page: Page, provider: OtherProvider): Pro
   throw new BrowserRunError("SEND_UNAVAILABLE", `No enabled ${WEB_CONFIG[provider].name} send button appeared. No prompt was sent.`);
 }
 
+async function deepSeekCompleted(page: Page, message: Locator): Promise<boolean> {
+  // The live UI exposes assistant identity on the content and places the
+  // response toolbar beside .ds-message. Icons get labels only on hover.
+  if (await message.locator('.ds-assistant-message-main-content').count() !== 1) return false;
+  const toolbar = message.locator('xpath=following-sibling::div[1]');
+  const buttons = toolbar.getByRole('button').filter({ visible: true });
+  const count = await buttons.count();
+  if (count < 2 || count > 8) return false;
+  let copy = false, regenerate = false;
+  for (const button of await buttons.all()) {
+    if (await button.getAttribute('aria-disabled') === 'true') continue;
+    // Minimized Chrome throttles animation frames, so the normal stability
+    // check can stall. Hover only (never click) the already-visible toolbar.
+    try { await button.hover({ force: true, timeout: 1000 }); } catch { continue; }
+    await page.waitForTimeout(600);
+    const labels = await page.locator('.ds-tooltip:visible, [role="tooltip"]:visible').allTextContents();
+    copy ||= labels.some(label => /^(Copy|Copia|复制)$/i.test(label.trim()));
+    regenerate ||= labels.some(label => /^(Regenerate|Rigenera|重新生成)$/i.test(label.trim()));
+    if (copy && regenerate) return true;
+  }
+  return false;
+}
+
 export async function waitForOtherResponse(page: Page, provider: OtherProvider, options: {
   assistantMessagesBefore: number; responseStableMs: number; maxWaitMs: number;
 }): Promise<string> {
@@ -40,8 +63,11 @@ export async function waitForOtherResponse(page: Page, provider: OtherProvider, 
     const messages = otherMessages(page, provider);
     if (await messages.count() > options.assistantMessagesBefore) {
       const latest = messages.last();
-      const content = latest.locator(provider === "gemini-web" ? 'message-content .markdown'
+      let content = latest.locator(provider === "gemini-web" ? 'message-content .markdown'
         : provider === "claude-web" ? '.font-claude-response' : '.ds-markdown:not(.ds-think-content .ds-markdown)').last();
+      if (provider === "claude-web" && await latest.locator('[data-perf-reply-text]').count() > 0) {
+        content = latest.locator('[data-perf-reply-text]').last();
+      }
       const text = (await content.innerText({ timeout: 250 }).catch(() => "")).trim();
       if (text !== lastText) { lastText = text; changedAt = Date.now(); }
       const stop = page.getByRole("button", { name: /^(Stop|Stop generating|Stop response|Interrompi|Interrompi generazione|Interrompi risposta)$/i }).filter({ visible: true });
@@ -51,10 +77,26 @@ export async function waitForOtherResponse(page: Page, provider: OtherProvider, 
       const streaming = await latest.getAttribute("data-is-streaming") === "true";
       // DeepSeek also offers copy on user messages. Require an assistant-only
       // regeneration action before accepting a message as the final answer.
-      const assistantConfirmed = provider !== "deepseek-web" || await latest.getByRole("button", {
+      let assistantConfirmed = provider !== "deepseek-web" || await latest.getByRole("button", {
         name: /^(Regenerate|Regenerate response|Retry|Rigenera|Riprova|重新生成)$/i,
       }).count() > 0;
-      if (lastText && assistantConfirmed && !streaming && await copy.count() > 0 && await stop.count() === 0 && Date.now() - changedAt >= options.responseStableMs) return lastText;
+      let hasCopy = await copy.count() > 0;
+      if (provider === "claude-web" && await latest.getAttribute('data-testid') === 'assistant-message') {
+        const row = latest.locator('xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " group/message-row ")][1]');
+        hasCopy = await row.locator('[data-testid="assistant-message"]').count() === 1
+          && await row.getByTestId('action-bar-copy').isVisible().catch(() => false);
+      }
+      if (lastText && !streaming && await stop.count() === 0 && Date.now() - changedAt >= options.responseStableMs) {
+        if (provider === "deepseek-web" && (!assistantConfirmed || !hasCopy)) {
+          assistantConfirmed = hasCopy = await deepSeekCompleted(page, latest);
+        }
+        // Hovering a toolbar takes time: recheck text and blockers before commit.
+        if (assistantConfirmed && hasCopy && !(await pageBlocker(page, provider))) {
+          assertChatOrigin(page, WEB_CONFIG[provider].url);
+          if ((await content.innerText({ timeout: 250 }).catch(() => "")).trim() === lastText
+            && await stop.count() === 0 && await latest.getAttribute('data-is-streaming') !== 'true') return lastText;
+        }
+      }
     }
     await page.waitForTimeout(500);
   }

@@ -6,10 +6,10 @@ Updated 22 September 2026. All integrations below use the website in a dedicated
 | --- | --- | --- |
 | `chatgpt-web` | Authenticated CLI review completed in 20.6 s; fresh anonymous MCP diff review completed in 16.1 s. | Text; existing ZIP uploads and model selection. Headless remains blocked in prior live checks. |
 | `gemini-web` | Anonymous CLI review completed in 27.4 s; fresh-profile MCP diff review in 19.9 s after the cookie setup fix. | Text; current/default website model. Authenticated models and long reasoning not tested. |
-| `deepseek-web` | Fresh profile reached `/sign_in`; no anonymous composer. | Experimental text adapter, tested with fixtures. Authenticated response DOM and generation **not live-validated**. |
-| `claude-web` | Fresh profile reached `/login`; no anonymous composer. | Experimental text adapter, tested with fixtures. Authenticated response DOM and generation **not live-validated**. |
+| `deepseek-web` | Signed-in MCP diff review completed in 15.5 s; corrected-file review in 18.5 s. Anonymous access required login. | Experimental text adapter. Delivery passed; corrected-code quality control **failed** (false positive). |
+| `claude-web` | Signed-in Free account: MCP diff review completed in 44.1 s; corrected-file review in 52.8 s. Anonymous access required login. | Experimental text adapter, now live-validated with the current/default website model. |
 
-The two new login profiles were opened for the account holder. Login, MFA and human verification remain manual when required. The implementation does not solve challenges, repeat blocked taps, copy cookies between profiles or bypass authentication. A successful fixture is not evidence that a provider's current authenticated UI works.
+Login, MFA and human verification remain manual when required. The implementation does not solve challenges, repeat blocked taps, copy cookies between profiles or bypass authentication. A successful fixture alone is not evidence that a provider's current authenticated UI works.
 
 ## Use a browser provider
 
@@ -49,7 +49,7 @@ For MCP use `givi_ask_web_llm` with `webProvider: "gemini-web"`, or prepare with
 - New browser fixtures cover CLI/MCP round trips for all three new adapters, destination selection, login redirects, partial answers, user/code-copy controls, and first-use Gemini setup. Existing ChatGPT browser, upload, model, cancellation and challenge tests remain in the suite.
 - Profiles and raw DOM diagnostics stay local and excluded from Git/npm. Reports contain status/provider/hash, not cookies or prompt text. Web token consumption and total savings remain unknown.
 
-DeepSeek/Claude full generation, authenticated Gemini, subscription model selection, long reasoning, and headless access on the new sites remain unvalidated. The new providers are experimental; this is not a production certification for all four websites. Provider UI/language changes can require selector updates and should fail without saving an unconfirmed response.
+Authenticated Gemini, subscription model selection, long reasoning, and headless access on the new sites remain unvalidated. The new providers are experimental; this is not a production certification for all four websites. Provider UI/language changes can require selector updates and should fail without saving an unconfirmed response.
 
 ## Repeatable acceptance check
 
@@ -70,9 +70,28 @@ In the first live pass on 22 September, Gemini identified both regressions (24.6
 
 With explicit contracts, the repeated ChatGPT run confirmed both regressions with reproduction inputs, expected/actual behavior, minimal fixes and regression cases (28.4 s). Its fresh review of the corrected code found no confirmed bug (40.0 s). Across these six real requests, responses were saved/read successfully, sources remained unchanged, no verification challenge appeared, and no false confirmed finding was observed in the negative controls. This does not guarantee that challenges will never recur. ChatGPT used the existing signed-in session; Gemini used anonymous access; model identity was not selected or certified.
 
+## Signed-in Claude and DeepSeek: results and fixes
+
+After login, both completed the two-phase MCP acceptance test in background Chrome: prepare an actual Git diff, send once per run, save the completed answer, read it through MCP, then review corrected files in a new conversation. The sources stayed unchanged; the corrected fixture passed all 18 independent assertions. Neither final run requested human verification. These are delivery observations, not a promise that authentication or challenges will never recur.
+
+| Provider | Buggy-code assessment | Corrected-code assessment |
+| --- | --- | --- |
+| Claude Free | Both regressions found, with reproductions and minimal fixes; 44.1 s. | `NO_CONFIRMED_FINDINGS`; 52.8 s. Passed this quality control. |
+| DeepSeek | Both regressions identified; 15.5 s. Also used `qty` instead of `quantity` in a reproduction, ignored the requested Italian, and suggested an unsafe NUL-separated cache key as an alternative. | Reported a bug using negative quantities, explicitly outside the positive-quantity precondition; 18.5 s. **False positive; quality control failed.** |
+
+The suggested NUL separator is ambiguous for arbitrary string IDs: `(tenant="a\0b", resource="c")` and `(tenant="a", resource="b\0c")` collide when concatenated. The existing JSON tuple encoding avoids this collision. No generated patch was applied or executed. The fixture's corrected version was independently authored before requesting reviews; model suggestions must still be checked against contracts and tests. Do not turn a successful browser run into a claim that its answer is correct.
+
+The live sessions exposed three implementation issues, now covered by regression tests:
+
+- Chrome restored maximized windows after login; macOS acknowledged minimize without changing state. Background mode now restores a normal window before minimizing and verifies the transition.
+- Claude's optional-cookie overlay intercepted the send action. Its explicit reject control is now handled before filling/sending. The initial uncertain-send case was inspected at `/new` with no assistant response before another test was started.
+- Both sites placed response actions outside the text container. Claude now scopes its action bar to the same assistant row and reads final prose separately from thinking status. DeepSeek verifies the assistant-content marker and the same response's copy/regenerate tooltips; minimized Chrome requires a hover without waiting for animation-frame stability. This never clicks regenerate. Earlier completed responses were inspected before further test submissions; timeout failures were retained in diagnostics rather than reported as successful runs.
+
+Validation after these changes: **156 unit tests, 40 browser tests**, plus a clean consumer package installation with 156 unit tests and production dependency audit reporting zero vulnerabilities. Six new browser cases cover live-shaped toolbars, incomplete answers, the Claude cookie overlay and maximized-window restoration. The final DeepSeek hover adjustment also passed its two targeted browser cases and the complete live two-phase run. Raw session diagnostics remain local and excluded from Git/npm.
+
 ## Free-account setup and readiness
 
-ChatGPT already completed signed-in and anonymous runs in this environment. Gemini completed anonymous runs; a personal Google account is optional for testing its signed-in path. DeepSeek and Claude redirected anonymous sessions to login, so those paths require the account holder to sign in before real generation can be validated.
+ChatGPT already completed signed-in and anonymous runs in this environment. Gemini completed anonymous runs; a personal Google account is optional for testing its signed-in path. DeepSeek and Claude redirected anonymous sessions to login. After the account holder signed in, both completed real generation using separate persistent profiles; no fresh login was needed between the two requests.
 
 For DeepSeek use the [web chat](https://chat.deepseek.com/), not its API platform. For Claude choose [Free](https://claude.com/pricing). No paid plan, API key or payment card is needed for this acceptance procedure; stop if an upgrade is requested. Free-site quotas still apply.
 
@@ -91,7 +110,7 @@ node scripts/web-acceptance.mjs --provider deepseek-web
 
 Repeat with `claude-web`. A check with `ready: true` and `submitted: false` only proves the composer is accessible; the real two-phase test and manual response assessment above are still required. If a verification loop occurs, stop and report the status instead of repeatedly clicking or relaunching. Use `--background`, not `--headless`, for normal reviews; a short visible startup/setup window can occur.
 
-**Readiness:** ChatGPT and anonymous Gemini have evidence for a limited pilot. DeepSeek/Claude remain experimental pending authenticated live generation and response validation. Passing these small cases is not a general model-quality benchmark or validation of long reasoning, specific subscription models, all locales or quota recovery. A stable multi-provider claim requires those remaining paths to be exercised and any observed failures corrected.
+**Readiness:** ChatGPT, anonymous Gemini and signed-in Claude have evidence for a limited pilot. DeepSeek delivery now works, but its corrected-code quality control failed; treat its findings as unverified suggestions, never automatic changes. All website adapters remain experimental. Passing these small cases is not a general model-quality benchmark or validation of long reasoning, specific subscription models, all locales or quota recovery. A stable multi-provider claim requires those remaining paths to be exercised and any observed failures corrected.
 
 ## Provider conditions
 

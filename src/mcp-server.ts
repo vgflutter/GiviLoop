@@ -306,7 +306,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "string",
               enum: [...WEB_PROVIDERS],
               description:
-                "Browser provider, no API key. Gemini anonymous reviews are live-validated. DeepSeek/Claude authenticated generation remains unverified. New adapters are experimental, text-only, using the website current/default model.",
+                "Browser provider, no API key. Gemini anonymous and DeepSeek/Claude signed-in text reviews are live-validated. Review accuracy varies; verify findings before applying changes. New adapters are experimental, text-only, using the website current/default model.",
               default: "chatgpt-web",
             },
             mode: {
@@ -512,7 +512,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "string",
               enum: [...WEB_PROVIDERS],
               description:
-                "Browser provider, no API key. Gemini anonymous reviews are live-validated. DeepSeek/Claude authenticated generation remains unverified. New adapters are experimental, text-only, using the website current/default model.",
+                "Browser provider, no API key. Gemini anonymous and DeepSeek/Claude signed-in text reviews are live-validated. Review accuracy varies; verify findings before applying changes. New adapters are experimental, text-only, using the website current/default model.",
               default: "chatgpt-web",
             },
             mode: {

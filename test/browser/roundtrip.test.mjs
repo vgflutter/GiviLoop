@@ -511,3 +511,63 @@ test("preferred unavailable model reports fallback and dismisses the menu before
   assert.equal(submissions[0].model, "GPT Base");
   assert.equal(submissions[0].menuOpen, false);
 });
+
+for (const provider of ['claude-web', 'deepseek-web']) {
+  for (const incomplete of [false, true]) test(`${provider}: live-shaped sibling toolbar ${incomplete ? 'cannot complete a partial answer' : 'confirms only final answer text'}`, {timeout:30000}, async t => {
+    const f=otherFixture(t,webCases.find(c=>c.provider===provider),incomplete);
+    const html=readFileSync(f.env.GIVILOOP_TEST_PAGE,'utf8');
+    const shape=provider==='claude-web' ? `
+      item.setAttribute('data-testid','assistant-message');
+      const row=document.createElement('div');row.className='group/message-row';item.replaceWith(row);row.append(item);
+      const content=item.querySelector('.font-claude-response');content.textContent='';
+      const thinking=document.createElement('div');thinking.textContent='THINKING MUST NOT BE SAVED';content.append(thinking);
+      const final=document.createElement('div');final.setAttribute('data-perf-reply-text','');final.textContent=${JSON.stringify(answer)};content.append(final);
+      const code=document.createElement('button');code.setAttribute('aria-label','Copia negli appunti');content.append(code);
+      ${incomplete ? '' : `setTimeout(()=>{const toolbar=document.createElement('div');const copy=document.createElement('button');copy.dataset.testid='action-bar-copy';copy.textContent='Copia';toolbar.append(copy);row.append(toolbar);},1000);`}
+    ` : `
+      item.querySelector('.ds-markdown').classList.add('ds-assistant-message-main-content');
+      const row=document.createElement('div');item.replaceWith(row);row.append(item);
+      const toolbar=document.createElement('div');row.append(toolbar);
+      for(const label of ${JSON.stringify(incomplete ? ['Copy code','Copia'] : ['Copia','Rigenera'])}) {
+        const b=document.createElement('div');b.setAttribute('role','button');b.textContent='icon';toolbar.append(b);
+        b.onmouseenter=()=>{document.querySelector('.ds-tooltip')?.remove();const tip=document.createElement('div');tip.className='ds-tooltip';tip.textContent=label;document.body.append(tip);};
+        b.onmouseleave=()=>document.querySelector('.ds-tooltip')?.remove();
+      }
+    `;
+    writeFileSync(f.env.GIVILOOP_TEST_PAGE,html.replace("const codeCopy=document.createElement('button');",shape+"const codeCopy=document.createElement('button');")
+      .replace("copy.setAttribute('aria-label','Copy response')", "copy.setAttribute('aria-label','Copy code')")
+      .replace("retry.setAttribute('aria-label','Regenerate')", "retry.setAttribute('aria-label','Unrelated')"));
+    const sent=await cli(f,'ask',['--send',provider,'--question','Review','--mode','auto','--headless','--browser-profile',f.profile,'--response-stable-ms','100','--max-wait-ms',incomplete?'2500':'6000']);
+    assert.equal(sent.code,incomplete?1:0,sent.stderr);
+    if(incomplete)assert.equal(existsSync(f.latest().response),false);
+    else assert.equal(readFileSync(f.latest().response,'utf8'),answer);
+    assert.equal(f.events().filter(e=>e.action==='submit').length,1);
+  });
+}
+
+test('Claude optional-cookie dialog is rejected before the sole send', {timeout:30000}, async t=>{
+  const f=otherFixture(t,webCases[1]);
+  const html=readFileSync(f.env.GIVILOOP_TEST_PAGE,'utf8');
+  writeFileSync(f.env.GIVILOOP_TEST_PAGE,html.replace('</body>','<div role="dialog" style="position:fixed;inset:0;background:white"><button data-testid="consent-reject" onclick="this.parentElement.remove()">Rifiuta</button></div></body>'));
+  const sent=await cli(f,'ask',['--send','claude-web','--question','Review','--mode','auto','--headless','--browser-profile',f.profile,'--response-stable-ms','100','--max-wait-ms','5000']);
+  assert.equal(sent.code,0,sent.stderr);
+  assert.equal(f.events().filter(e=>e.action==='submit').length,1);
+  assert.equal(readFileSync(f.latest().response,'utf8'),answer);
+});
+
+test('native maximized window can enter background mode and closes cleanly', {timeout:30000}, async t=>{
+  const f=fixture(t),profile=path.join(f.root,'maximized-profile');
+  const {launchChatBrowser,minimizeBrowser,profileOwnerPid}=await import(pathToFileURL(path.join(distDir,'providers/browser-runtime.js')));
+  const c=await launchChatBrowser(profile,false);
+  try {
+    const p=c.pages()[0]||await c.newPage();const session=await c.newCDPSession(p);
+    const {windowId}=await session.send('Browser.getWindowForTarget');
+    await session.send('Browser.setWindowBounds',{windowId,bounds:{windowState:'maximized'}});
+    for(let i=0;i<30;i++){if((await session.send('Browser.getWindowBounds',{windowId})).bounds.windowState==='maximized')break;await p.waitForTimeout(100);}
+    assert.equal((await session.send('Browser.getWindowBounds',{windowId})).bounds.windowState,'maximized');
+    await minimizeBrowser(c,p);
+    assert.equal((await session.send('Browser.getWindowBounds',{windowId})).bounds.windowState,'minimized');
+    await session.detach();
+  }finally{await c.close();}
+  assert.equal(profileOwnerPid(profile),undefined);
+});

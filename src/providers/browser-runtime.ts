@@ -65,7 +65,20 @@ export async function launchChatBrowser(profile: string, headless: boolean, back
 export async function minimizeBrowser(context: BrowserContext, page: Page): Promise<void> {
   const session = await context.newCDPSession(page);
   try {
-    const { windowId } = await session.send("Browser.getWindowForTarget");
+    const { windowId, bounds: initial } = await session.send("Browser.getWindowForTarget");
+    if (initial.windowState === "minimized") return;
+    // Chrome on macOS can acknowledge minimize while staying maximized.
+    // Leave maximized/fullscreen first and wait for the native transition.
+    if (initial.windowState === "maximized" || initial.windowState === "fullscreen") {
+      await session.send("Browser.setWindowBounds", { windowId, bounds: { windowState: "normal" } });
+      let restored = false;
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const { bounds } = await session.send("Browser.getWindowBounds", { windowId });
+        if (bounds.windowState === "normal") { restored = true; break; }
+        await page.waitForTimeout(100);
+      }
+      if (!restored) throw new Error("Chrome did not leave its maximized/fullscreen state.");
+    }
     await session.send("Browser.setWindowBounds", { windowId, bounds: { windowState: "minimized" } });
     // macOS completes the window animation asynchronously after the CDP ack.
     for (let attempt = 0; attempt < 20; attempt++) {
@@ -197,10 +210,11 @@ export async function waitForChatInput(page: Page, timeoutMs: number, provider: 
     const blocker = await pageBlocker(page, provider);
     if (blocker) throw blocker;
     if (await input.isEditable({ timeout: 250 }).catch(() => false)) {
-      if (provider === "gemini-web") {
-        // Dismiss only Google's explicit optional-cookie choice, never accept
+      if (provider === "gemini-web" || provider === "claude-web") {
+        // Dismiss only the explicit optional-cookie choice, never accept
         // account terms, solve a challenge or click arbitrary consent buttons.
-        const reject = page.getByRole("button", { name: /^(Reject all|Rifiuta tutto)$/i }).first();
+        const reject = provider === "claude-web" ? page.getByTestId("consent-reject")
+          : page.getByRole("button", { name: /^(Reject all|Rifiuta tutto)$/i }).first();
         if (await reject.isVisible()) {
           assertChatOrigin(page, WEB_CONFIG[provider].url);
           await onSetupRequired?.();
@@ -208,7 +222,7 @@ export async function waitForChatInput(page: Page, timeoutMs: number, provider: 
             await reject.click({ timeout: 5000 });
             await reject.waitFor({ state: "hidden", timeout: 10_000 });
           } catch {
-            throw new BrowserRunError("BROWSER_SETUP_REQUIRED", `Gemini's cookie choice could not be completed. Run givi browser login --provider ${provider}, finish setup and close Chrome. No prompt was sent.`);
+            throw new BrowserRunError("BROWSER_SETUP_REQUIRED", `${WEB_CONFIG[provider].name}'s cookie choice could not be completed. Run givi browser login --provider ${provider}, finish setup and close Chrome. No prompt was sent.`);
           }
         }
       }
