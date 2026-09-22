@@ -1,6 +1,6 @@
 // Opt-in checks against actual providers. Sends synthetic code only.
 // node scripts/live-e2e.mjs --web | --local [--output PATH]
-// --web also accepts --browser-profile PATH for an isolated anonymous profile.
+// --web accepts --provider NAME and --browser-profile PATH for an isolated profile.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -13,11 +13,14 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 const { values } = parseArgs({ options: {
   web: { type: 'boolean' }, local: { type: 'boolean' },
-  output: { type: 'string' }, 'browser-profile': { type: 'string' },
+  output: { type: 'string' }, 'browser-profile': { type: 'string' }, provider: { type: 'string' },
 } });
 assert.ok(Boolean(values.web) !== Boolean(values.local), 'Choose exactly one of --web (available ChatGPT session) or --local (four configured local runtimes).');
 assert.ok(!values.local || !values['browser-profile'], '--browser-profile applies only to --web.');
 const mode = values.web ? '--web' : '--local';
+const provider = values.provider ?? 'chatgpt-web';
+assert.ok(['chatgpt-web','deepseek-web','claude-web','gemini-web'].includes(provider), 'Unknown web provider');
+assert.ok(!values.local || !values.provider, '--provider applies only to --web.');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const output = values.output ? path.resolve(values.output) : path.join(root, '.giviloop/diagnostics/readme-refresh');
 mkdirSync(output, { recursive: true });
@@ -42,10 +45,10 @@ try {
     for (const args of [['init'], ['add', 'tail.ts'], ['-c', 'user.name=GiviLoop fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Synthetic baseline']]) execFileSync('git', args, { cwd: repo, stdio: 'ignore' });
     writeFileSync(path.join(repo, 'tail.ts'), changed);
     const before = hash(changed);
-    await call('givi_prepare_from_git', { repositoryPath: repo, taskGoal: 'Review the changes for a concrete regression. Contract: a nonnegative count returns up to the last count items; zero returns an empty array. Negative counts throw. Suggest a minimal fix and regression cases. Keep the response concise.' });
+    await call('givi_prepare_from_git', { repositoryPath: repo, targetProvider: provider.replace('-web','-chat'), taskGoal: 'Review the changes for a concrete regression. Contract: a nonnegative count returns up to the last count items; zero returns an empty array. Negative counts throw. Suggest a minimal fix and regression cases. Keep the response concise.' });
     const run = latest();
     const started = Date.now();
-    await call('givi_send_to_web_llm', { repositoryPath: repo, runId: run.runId, webProvider: 'chatgpt-web', mode: 'auto', background: true,
+    await call('givi_send_to_web_llm', { repositoryPath: repo, runId: run.runId, webProvider: provider, mode: 'auto', background: true,
       ...(values['browser-profile'] ? { browserProfile: path.resolve(values['browser-profile']) } : {}),
       maxWaitMs: 120000, verificationWaitMs: 0, reviewResponseMode: 'analyze-only' });
     const response = readFileSync(path.join(run.dir, 'external-review-response.md'), 'utf8');
@@ -61,7 +64,7 @@ try {
     assert.deepEqual(buggy([1, 2, 3], 0), [1, 2, 3]);
     for (const [items, count, expected] of [[[1,2,3],0,[]],[[1,2,3],1,[3]],[[1,2,3],2,[2,3]],[[1,2,3],3,[1,2,3]],[[1,2,3],8,[1,2,3]],[[],0,[]]]) assert.deepEqual(fixed(items,count),expected);
     assert.throws(() => fixed([1], -1), RangeError);
-    results.push({ path: 'MCP prepare Git diff -> web send -> MCP read', runId: run.runId, durationMs: Date.now() - started, sourceUnchanged: true, verificationRequired: status.verificationRequired, independentCases: 7, webTokens: null });
+    results.push({ provider, path: 'MCP prepare Git diff -> web send -> MCP read', runId: run.runId, durationMs: Date.now() - started, sourceUnchanged: true, verificationRequired: status.verificationRequired, independentCases: 7, webTokens: null });
     writeFileSync(path.join(output, 'mcp-web-response.md'), response);
   } else {
     copyFileSync(path.join(root, 'examples/double-check/sum.ts'), path.join(repo, 'sum.ts'));

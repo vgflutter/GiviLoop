@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readlinkSync, writeFileSync, renameSync, rmSync 
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
+import { WEB_CONFIG, type WebProvider } from "./web-config.js";
 import { nativeChrome, NativeChromeError } from "./native-chrome.js";
 
 export class BrowserRunError extends Error {
@@ -12,8 +13,8 @@ export class BrowserRunError extends Error {
   }
 }
 
-export function browserProfilePath(): string {
-  return path.join(os.homedir(), ".giviloop", "browser-profiles", "chatgpt");
+export function browserProfilePath(provider: WebProvider = "chatgpt-web"): string {
+  return path.join(os.homedir(), ".giviloop", "browser-profiles", WEB_CONFIG[provider].profile);
 }
 
 export function profileOwnerPid(profile: string): number | undefined {
@@ -98,14 +99,8 @@ export function verificationTimeout(value: number | undefined, headless: boolean
   return result;
 }
 
-const INPUT_SELECTOR = [
-  'div#prompt-textarea[contenteditable="true"]:visible',
-  'div[contenteditable="true"][data-placeholder]:visible',
-  'textarea:visible',
-].join(", ");
-
-export function chatInput(page: Page): Locator {
-  return page.locator(INPUT_SELECTOR).first();
+export function chatInput(page: Page, provider: WebProvider = "chatgpt-web"): Locator {
+  return page.locator(WEB_CONFIG[provider].input).first();
 }
 
 export function assertChatOrigin(page: Page, expectedUrl: string): void {
@@ -114,14 +109,14 @@ export function assertChatOrigin(page: Page, expectedUrl: string): void {
   if (!matches) throw new BrowserRunError("UNEXPECTED_ORIGIN", "The browser left the configured provider origin. Sending stopped to protect the review context.");
 }
 
-export async function pageBlocker(page: Page): Promise<BrowserRunError | undefined> {
+export async function pageBlocker(page: Page, provider: WebProvider = "chatgpt-web"): Promise<BrowserRunError | undefined> {
   if (page.isClosed()) return new BrowserRunError("BROWSER_CLOSED", "The browser was closed before the review completed.");
   const url = page.url();
   if (/^chrome-error:/.test(url)) {
     return new BrowserRunError("NETWORK_ERROR", "Chrome could not load the page. Check the network and whether the computer went to sleep.");
   }
-  if (/^https:\/\/(auth\.openai\.com|accounts\.google\.com)\//.test(url)) {
-    return new BrowserRunError("LOGIN_REQUIRED", "ChatGPT requires login. Run givi browser login, sign in in the dedicated Chrome profile, then close it and retry.");
+  if (/^https:\/\/(auth\.openai\.com|accounts\.google\.com)\//.test(url) || /^https:\/\/(chat\.deepseek\.com\/sign_in|claude\.ai\/login)(?:[/?#]|$)/.test(url)) {
+    return new BrowserRunError("LOGIN_REQUIRED", `${WEB_CONFIG[provider].name} requires login. Run givi browser login --provider ${provider}, sign in in the dedicated Chrome profile, then close it and retry.`);
   }
   const challenge = page.locator('#challenge-running:visible, #challenge-stage:visible, iframe[src*="challenges.cloudflare.com"]:visible').first();
   if (await challenge.isVisible().catch(() => false)) {
@@ -134,7 +129,7 @@ export async function pageBlocker(page: Page): Promise<BrowserRunError | undefin
   return undefined;
 }
 
-export async function navigateToChat(page: Page, url: string, timeoutMs: number, verificationWaitMs = 0, onVerificationRequired?: () => Promise<void>): Promise<void> {
+export async function navigateToChat(page: Page, url: string, timeoutMs: number, verificationWaitMs = 0, onVerificationRequired?: () => Promise<void>, provider: WebProvider = "chatgpt-web"): Promise<void> {
   let documentStatus: number | undefined, documentChallenge = false, challengeDocuments = 0;
   const observe = (response: Response) => {
     if (response.request().isNavigationRequest() && response.frame() === page.mainFrame()) {
@@ -156,9 +151,9 @@ export async function navigateToChat(page: Page, url: string, timeoutMs: number,
       // clear in the original HTTP 200 document. Never trust a composer in a denial.
       if (documentStatus !== undefined && documentStatus >= 200 && documentStatus < 400 && !documentChallenge) {
         assertChatOrigin(page, url);
-        const blocker = await pageBlocker(page);
+        const blocker = await pageBlocker(page, provider);
         if (blocker && blocker.code !== "ACCESS_CHALLENGE") throw blocker;
-        if (!blocker && await chatInput(page).isEditable({ timeout: 250 }).catch(() => false)) return;
+        if (!blocker && await chatInput(page, provider).isEditable({ timeout: 250 }).catch(() => false)) return;
       }
       await page.waitForTimeout(500);
     }
@@ -173,42 +168,59 @@ export async function navigateToChat(page: Page, url: string, timeoutMs: number,
         if (response?.headers?.()["cf-mitigated"] === "challenge") return await waitForVerification();
         if (status === 403 || status === 429) throw new BrowserRunError(status === 403 ? "ACCESS_DENIED" : "PROVIDER_LIMIT", `The provider returned HTTP ${status}. No prompt was sent. Interactive access or a later retry is required.`);
         if (status && status >= 400) throw new Error(`The provider returned HTTP ${status}.`);
-        const blocker = await pageBlocker(page);
+        const blocker = await pageBlocker(page, provider);
         if (blocker?.code === "ACCESS_CHALLENGE") return await waitForVerification();
         if (blocker) throw blocker;
         assertChatOrigin(page, url);
         return;
       } catch (error) {
         if (error instanceof BrowserRunError) throw error;
-        const blocker = await pageBlocker(page);
+        const blocker = await pageBlocker(page, provider);
         if (blocker?.code === "ACCESS_CHALLENGE") return await waitForVerification();
         if (blocker) throw blocker;
         // A slow optional resource must not block an already usable composer.
-        if (await chatInput(page).isEditable({ timeout: 500 }).catch(() => false)) {
+        if (await chatInput(page, provider).isEditable({ timeout: 500 }).catch(() => false)) {
           assertChatOrigin(page, url);
           return;
         }
-        if (attempt === 1) throw new BrowserRunError("NAVIGATION_FAILED", `ChatGPT could not be loaded after two attempts. No prompt was sent. Check the network, browser profile and computer sleep state. ${error instanceof Error ? error.message.split("\n")[0] : ""}`);
+        if (attempt === 1) throw new BrowserRunError("NAVIGATION_FAILED", `${WEB_CONFIG[provider].name} could not be loaded after two attempts. No prompt was sent. Check the network, browser profile and computer sleep state. ${error instanceof Error ? error.message.split("\n")[0] : ""}`);
         await page.waitForTimeout(750);
       }
     }
   } finally { if (verificationWaitMs > 0) page.off("response", observe); }
 }
 
-export async function waitForChatInput(page: Page, timeoutMs: number): Promise<Locator> {
+export async function waitForChatInput(page: Page, timeoutMs: number, provider: WebProvider = "chatgpt-web", onSetupRequired?: () => Promise<void>): Promise<Locator> {
   const deadline = Date.now() + timeoutMs;
-  const input = chatInput(page);
+  const input = chatInput(page, provider);
   while (Date.now() < deadline) {
-    const blocker = await pageBlocker(page);
+    const blocker = await pageBlocker(page, provider);
     if (blocker) throw blocker;
-    if (await input.isEditable({ timeout: 250 }).catch(() => false)) return input;
+    if (await input.isEditable({ timeout: 250 }).catch(() => false)) {
+      if (provider === "gemini-web") {
+        // Dismiss only Google's explicit optional-cookie choice, never accept
+        // account terms, solve a challenge or click arbitrary consent buttons.
+        const reject = page.getByRole("button", { name: /^(Reject all|Rifiuta tutto)$/i }).first();
+        if (await reject.isVisible()) {
+          assertChatOrigin(page, WEB_CONFIG[provider].url);
+          await onSetupRequired?.();
+          try {
+            await reject.click({ timeout: 5000 });
+            await reject.waitFor({ state: "hidden", timeout: 10_000 });
+          } catch {
+            throw new BrowserRunError("BROWSER_SETUP_REQUIRED", `Gemini's cookie choice could not be completed. Run givi browser login --provider ${provider}, finish setup and close Chrome. No prompt was sent.`);
+          }
+        }
+      }
+      return input;
+    }
     await page.waitForTimeout(250);
   }
   const login = page.getByRole("button", { name: /^(Log in|Sign in|Accedi)$/i }).first();
   if (await login.isVisible().catch(() => false)) {
-    throw new BrowserRunError("LOGIN_REQUIRED", "No usable chat input is available and ChatGPT shows a login button. Run givi browser login, sign in, close that browser, then retry.");
+    throw new BrowserRunError("LOGIN_REQUIRED", `No usable chat input is available and ${WEB_CONFIG[provider].name} shows a login button. Run givi browser login --provider ${provider}, sign in, close that browser, then retry.`);
   }
-  throw new BrowserRunError("CHAT_INPUT_UNAVAILABLE", "No editable ChatGPT input appeared. The page may still be loading or its interface may have changed. No prompt was sent.");
+  throw new BrowserRunError("CHAT_INPUT_UNAVAILABLE", `No editable ${WEB_CONFIG[provider].name} input appeared. The page may still be loading or its interface may have changed. No prompt was sent.`);
 }
 
 export function atomicWrite(file: string, content: string): void {

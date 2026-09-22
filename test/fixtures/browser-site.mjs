@@ -16,8 +16,11 @@ async function instrument(context) {
     appendFileSync(log, JSON.stringify({ action: "submit", ...value }) + "\n");
   });
   await context.route("**/*", route => {
-    if (route.request().isNavigationRequest() && new URL(route.request().url()).origin === "https://chatgpt.com") {
+    if (route.request().isNavigationRequest() && new URL(route.request().url()).origin === (process.env.GIVILOOP_TEST_ORIGIN ?? "https://chatgpt.com")) {
       providerNavigations++;
+      if (process.env.GIVILOOP_TEST_LOGIN_PATH && providerNavigations === 1) {
+        return route.fulfill({status:200, contentType:"text/html", body:`<script>location.href=${JSON.stringify(process.env.GIVILOOP_TEST_LOGIN_PATH)}</script>`});
+      }
       if (process.env.GIVILOOP_TEST_VERIFICATION_FLOW && providerNavigations === 1) {
         // A controlled page transition stands in for completion by a human.
         // No actual provider challenge is accessed or solved in this fixture.

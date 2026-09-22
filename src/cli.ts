@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { WEB_CONFIG, TARGET_PROVIDERS, webProvider, isWebProvider, targetForWeb, webForTarget, assertWebTarget, type TargetProvider } from "./providers/web-config.js";
+import { browserProfilePath } from "./providers/browser-runtime.js";
 import { redactSecrets } from "./redaction.js";
 import { isLocalProvider, type LocalProvider } from "./providers/local-types.js";
 
@@ -19,7 +21,7 @@ import { pruneCompletedRuns, RUN_ID_PATTERN } from "./run-storage.js";
 import { VERSION } from "./version.js";
 import { probeLocalProvider, readLocalProvider, readLocalReasoning, sendLocalReview } from "./providers/local-review.js";
 import {
-  sendToChatGptWeb,
+  sendToWebChat,
   type ChatGptModelSelection,
   type ChatGptWebMode,
 } from "./providers/chatgpt-web.js";
@@ -30,8 +32,6 @@ const INBOX_DIR = path.join(GIVI_DIR, "inbox");
 const RUNS_DIR = path.join(GIVI_DIR, "runs");
 const LATEST_RUN_ID_PATH = path.join(GIVI_DIR, "latest-run-id");
 const REVIEW_PACKAGE_PATH = path.join(OUTBOX_DIR, "review-package.md");
-const CHATGPT_PROMPT_PATH = path.join(OUTBOX_DIR, "chatgpt-prompt.md");
-const CLAUDE_PROMPT_PATH = path.join(OUTBOX_DIR, "claude-prompt.md");
 const EXTERNAL_REVIEW_REQUEST_PATH = path.join(
   OUTBOX_DIR,
   "external-review-request.md",
@@ -97,7 +97,6 @@ type SourceArchiveManifest = {
   };
 };
 
-type TargetProvider = "chatgpt-chat" | "claude-chat";
 type Command =
   | "prepare"
   | "ask"
@@ -143,24 +142,25 @@ async function main(): Promise<void> {
       }
       case "doctor": {
         const provider = readOption(args, "--provider");
-        if (provider) {
+        if (provider && !isWebProvider(provider)) {
           console.log(JSON.stringify(await probeLocalProvider(readLocalProvider(provider), readOption(args, "--base-url")), null, 2));
           break;
         }
-        const report = diagnoseBrowser(readOption(args, "--browser-profile"));
+        const report = diagnoseBrowser(readOption(args, "--browser-profile") ?? browserProfilePath(webProvider(provider)));
         console.log(JSON.stringify(report, null, 2));
         if (!report.chromeExecutable) process.exitCode = 1;
         break;
       }
       case "browser": {
+        const provider = webProvider(readOption(args, "--provider"));
         if (args[1] === "check") {
-          const report = await checkBrowserAccess(readOption(args, "--browser-profile"), args.includes("--headless"), readPositiveNumberOption(args, "--navigation-timeout-ms"), readVerificationWaitOption(args));
+          const report = await checkBrowserAccess(readOption(args, "--browser-profile"), args.includes("--headless"), readPositiveNumberOption(args, "--navigation-timeout-ms"), readVerificationWaitOption(args), provider);
           console.log(JSON.stringify(report, null, 2));
           if (!report.ready) process.exitCode = 1;
           break;
         }
-        if (args[1] !== "login") throw new Error("Usage: givi browser login|check [--browser-profile PATH]");
-        const profile = await openLoginBrowser(readOption(args, "--browser-profile"));
+        if (args[1] !== "login") throw new Error("Usage: givi browser login|check [--provider chatgpt-web|deepseek-web|claude-web|gemini-web] [--browser-profile PATH]");
+        const profile = await openLoginBrowser(readOption(args, "--browser-profile"), provider);
         console.log(`Opened regular Chrome with the GiviLoop profile: ${profile}`);
         console.log("Sign in, then close this Chrome instance before sending. No prompt is sent by this command.");
         break;
@@ -227,13 +227,7 @@ async function ask(args: string[]): Promise<void> {
     return;
   }
 
-  if (targetProvider !== "chatgpt-chat") {
-    throw new Error(
-      "Automated web sending is currently implemented only for chatgpt-chat/chatgpt-web. Use manual copy/ingest for claude-chat.",
-    );
-  }
-
-  if (sendProvider !== "chatgpt-web") {
+  if (!isWebProvider(sendProvider)) {
     throw new Error(`Unsupported send provider: ${sendProvider}`);
   }
 
@@ -242,7 +236,9 @@ async function ask(args: string[]): Promise<void> {
   const modelSelection = readModelSelection(args);
   const responseStableMs = readPositiveNumberOption(args, "--response-stable-ms");
   const maxWaitMs = readPositiveNumberOption(args, "--max-wait-ms");
-  const result = await sendToChatGptWeb({
+  assertWebTarget(targetProvider, sendProvider);
+  const result = await sendToWebChat({
+    webProvider: sendProvider,
     repositoryPath: process.cwd(),
     requestPath: reviewRun.requestPath,
     responsePath: reviewRun.responsePath,
@@ -382,13 +378,7 @@ async function archiveSource(args: string[]): Promise<void> {
     return;
   }
 
-  if (targetProvider !== "chatgpt-chat") {
-    throw new Error(
-      "Automated archive sending is currently implemented only for chatgpt-chat/chatgpt-web. Use manual copy/ingest for claude-chat.",
-    );
-  }
-
-  if (sendProvider !== "chatgpt-web") {
+  if (!isWebProvider(sendProvider)) {
     throw new Error(`Unsupported send provider: ${sendProvider}`);
   }
 
@@ -397,7 +387,9 @@ async function archiveSource(args: string[]): Promise<void> {
   const modelSelection = readModelSelection(args);
   const responseStableMs = readPositiveNumberOption(args, "--response-stable-ms");
   const maxWaitMs = readPositiveNumberOption(args, "--max-wait-ms");
-  const result = await sendToChatGptWeb({
+  assertWebTarget(targetProvider, sendProvider);
+  const result = await sendToWebChat({
+    webProvider: sendProvider,
     repositoryPath: process.cwd(),
     requestPath: reviewRun.requestPath,
     responsePath: reviewRun.responsePath,
@@ -560,7 +552,7 @@ ${untrackedContent || "No untracked file content included."}
 
   const prompt = buildProviderPrompt(targetProvider, content);
   const providerPromptPath =
-    targetProvider === "claude-chat" ? CLAUDE_PROMPT_PATH : CHATGPT_PROMPT_PATH;
+    path.join(OUTBOX_DIR, `${WEB_CONFIG[webForTarget(targetProvider)].profile}-prompt.md`);
   const reviewRun = createReviewRun();
 
   writeFileSync(REVIEW_PACKAGE_PATH, content, "utf8");
@@ -602,18 +594,12 @@ async function sendPrepared(args: string[]): Promise<void> {
     return;
   }
 
-  if (sendProvider !== "chatgpt-web") {
+  if (!isWebProvider(sendProvider)) {
     throw new Error(`Unsupported send provider: ${sendProvider}`);
   }
 
   const metadata = readReviewRunMetadata(latestRun);
-  const targetProvider = readMetadataString(metadata, "targetProvider");
-
-  if (targetProvider && targetProvider !== "chatgpt-chat") {
-    throw new Error(
-      `Selected request targets ${targetProvider}. Automated web sending currently supports chatgpt-chat only. Use givi copy/ingest for this run or create a chatgpt-chat request.`,
-    );
-  }
+  const targetProvider = readRunTarget(metadata);
 
   const attachmentPaths = readPreparedRunAttachmentPaths(latestRun, metadata);
   const mode = readWebMode(args);
@@ -621,7 +607,9 @@ async function sendPrepared(args: string[]): Promise<void> {
   const modelSelection = readModelSelection(args);
   const responseStableMs = readPositiveNumberOption(args, "--response-stable-ms");
   const maxWaitMs = readPositiveNumberOption(args, "--max-wait-ms");
-  const result = await sendToChatGptWeb({
+  assertWebTarget(targetProvider, sendProvider);
+  const result = await sendToWebChat({
+    webProvider: sendProvider,
     repositoryPath: process.cwd(),
     requestPath: latestRun.requestPath,
     responsePath: latestRun.responsePath,
@@ -670,6 +658,7 @@ function readVerificationWaitOption(args: string[]): number | undefined {
 }
 
 function validateDeliveryOptions(args: string[], destination?: string): void {
+  if (destination && !isLocalProvider(destination)) webProvider(destination);
   const local = isLocalProvider(destination);
   const provided = (flag: string) => args.some(arg => arg === flag || arg.startsWith(flag + "="));
   if (local) {
@@ -730,10 +719,7 @@ function copyPrompt(args: string[]): void {
     console.log(`Copied ${latestRun.requestPath} to clipboard.`);
     console.log(`Updated ${EXTERNAL_REVIEW_REQUEST_PATH}`);
     if (args.includes("--open")) {
-      const targetProvider = readMetadataString(
-        readReviewRunMetadata(latestRun),
-        "targetProvider",
-      );
+      const targetProvider = readRunTarget(readReviewRunMetadata(latestRun));
       openProviderChat(targetProvider ?? readTargetProvider(args));
     }
     return;
@@ -748,7 +734,7 @@ function copyPrompt(args: string[]): void {
   const reviewPackage = readFileSync(REVIEW_PACKAGE_PATH, "utf8");
   const targetProvider = readTargetProvider(args);
   const providerPromptPath =
-    targetProvider === "claude-chat" ? CLAUDE_PROMPT_PATH : CHATGPT_PROMPT_PATH;
+    path.join(OUTBOX_DIR, `${WEB_CONFIG[webForTarget(targetProvider)].profile}-prompt.md`);
 
   const prompt = buildProviderPrompt(targetProvider, reviewPackage);
 
@@ -765,16 +751,7 @@ function copyPrompt(args: string[]): void {
 }
 
 function openProviderChat(provider: string): void {
-  const url =
-    provider === "chatgpt-chat"
-      ? "https://chatgpt.com/"
-      : provider === "claude-chat"
-        ? "https://claude.ai/new"
-        : undefined;
-
-  if (!url) {
-    throw new Error(`Cannot open a chat for unsupported target provider: ${provider}`);
-  }
+  const url = WEB_CONFIG[webForTarget(provider)].url;
 
   // Open the user's regular browser; it is not controlled by Playwright.
   try {
@@ -797,7 +774,7 @@ function buildProviderPrompt(
   provider: TargetProvider,
   reviewPackage: string,
 ): string {
-  const providerName = provider === "claude-chat" ? "Claude" : "ChatGPT";
+  const providerName = WEB_CONFIG[webForTarget(provider)].name;
 
   return `You are ${providerName}, acting as an external senior software reviewer.
 
@@ -853,7 +830,7 @@ function buildSourceArchivePrompt(input: {
   manifest: SourceArchiveManifest;
 }): string {
   const providerName =
-    input.targetProvider === "claude-chat" ? "Claude" : "ChatGPT";
+    WEB_CONFIG[webForTarget(input.targetProvider)].name;
 
   return `You are ${providerName}, acting as an external senior software reviewer.
 
@@ -1120,7 +1097,7 @@ function ingestReview(args: string[]): void {
   const metadata = selectedRun ? readReviewRunMetadata(selectedRun) : undefined;
   const targetProvider = readTargetProvider(
     args,
-    readMetadataString(metadata, "targetProvider"),
+    readRunTarget(metadata),
   );
   const rawReview = readClipboard().trim();
 
@@ -1239,14 +1216,15 @@ function readTargetProvider(
   fallback: string = "chatgpt-chat",
 ): TargetProvider {
   const provider =
-    readOption(args, "--target-provider") ?? readOption(args, "--provider") ?? fallback;
+    readOption(args, "--target-provider") ?? readOption(args, "--provider") ??
+    (isWebProvider(readOption(args, "--send")) ? targetForWeb(webProvider(readOption(args, "--send"))) : fallback);
 
-  if (provider === "chatgpt-chat" || provider === "claude-chat") {
-    return provider;
+  if ((TARGET_PROVIDERS as readonly string[]).includes(provider)) {
+    return provider as TargetProvider;
   }
 
   throw new Error(
-    `Invalid target provider: ${provider}. Use chatgpt-chat or claude-chat.`,
+    `Invalid target provider: ${provider}. Use ${TARGET_PROVIDERS.join(", ")}.`,
   );
 }
 
@@ -1367,6 +1345,12 @@ function readReviewRunMetadata(
   }
 
   return metadata as Record<string, unknown>;
+}
+
+function readRunTarget(metadata: Record<string, unknown> | undefined): string | undefined {
+  const target = readMetadataString(metadata, "targetProvider");
+  const browser = readMetadataString(metadata, "webProvider");
+  return target ?? (browser ? targetForWeb(webProvider(browser)) : undefined);
 }
 
 function readMetadataString(
@@ -1992,12 +1976,11 @@ Important options:
   --goal TEXT               Goal/context for givi prepare.
   --file PATH               Attach a repository-local file to givi ask. Can be repeated.
   --open                    With givi copy, open the target chat in your regular browser for manual use.
-  --target-provider chatgpt-chat|claude-chat
-                            Generate provider-specific manual prompts. Defaults to chatgpt-chat.
-  --send chatgpt-web|ollama|dwarfstar|llama-cpp|lmstudio|mlx
+  --target-provider chatgpt-chat|deepseek-chat|claude-chat|gemini-chat
+                            Target for prepared/manual prompts; inferred from --send when provided.
+  --send chatgpt-web|deepseek-web|claude-web|gemini-web|ollama|dwarfstar|llama-cpp|lmstudio|mlx
                             Send through the browser or a local inference runtime.
-  --provider ollama|dwarfstar|llama-cpp|lmstudio|mlx
-                            Runtime for models and doctor commands.
+  --provider NAME           Web provider for browser login/check and doctor; local runtime for models/doctor.
   --base-url URL            Loopback-only local server URL; no cloud fallback.
   --max-output-tokens N     Local generation budget, including model thinking where applicable.
   --context-tokens N        Local context budget (DwarfStar: minimum server context capacity).
@@ -2011,7 +1994,7 @@ Important options:
   --browser-profile PATH    Dedicated Chrome profile shared by browser login and send.
   --navigation-timeout-ms N
                             Timeout per initial page load; at most two attempts before sending.
-  --model LABEL             Required local model name, or optional web UI model label.
+  --model LABEL             Required local model name, or optional ChatGPT UI label. Other chats use their current selection.
   --require-model           Fail if the requested web UI model cannot be selected.
   --max-wait-ms N           Maximum wait for an auto-mode provider response.
   --response-stable-ms N    Required response stability window before saving.

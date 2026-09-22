@@ -15,11 +15,13 @@ GiviLoop does **not** measure web token usage, subscription quota consumption, t
 
 ## Two different ways to use a website
 
-**Manual transfer:** GiviLoop prepares the context and copies the prompt locally. You paste and send it on the website, copy the answer, then run `givi ingest`. The site interaction and answer retrieval are manual. This is available for ChatGPT and Claude prompt formats.
+**Manual transfer:** GiviLoop prepares the context and copies the prompt locally. You paste and send it on the website, copy the answer, then run `givi ingest`. The site interaction and answer retrieval are manual. This is available for ChatGPT, DeepSeek, Claude and Gemini prompt formats.
 
-**Optional browser automation:** GiviLoop fills, sends and reads the ChatGPT page automatically, then saves the response. `--background` uses a minimized native Chrome window; it is not headless. Login and human verification still require the account holder when requested. The integration has completed real authenticated CLI/MCP reviews, but the website can change or refuse access.
+**Optional browser automation:** GiviLoop fills, sends and reads a supported chat page automatically, then saves the response. [Validation differs by provider](web-providers.md). `--background` uses a minimized native Chrome window; it is not headless. Login and human verification still require the account holder when requested. The integration has completed real authenticated CLI/MCP reviews, but the website can change or refuse access.
 
 OpenAI's European terms prohibit automatically or programmatically extracting data or output. That directly affects the automatic ChatGPT path described here; using clipboard buttons instead of DOM text does not create an exception. An existing subscription, open-source license or user-responsibility disclaimer does not establish permission. [Official terms](https://openai.com/policies/eu-terms-of-use/).
+
+DeepSeek terms §3.5(3) also restrict capturing/copying service content with automated tools; Anthropic consumer terms §3.7 restrict automated access absent explicit permission or API access. Browser access without an API key is not an exemption. [DeepSeek terms](https://cdn.deepseek.com/policies/en-US/deepseek-terms-of-use.html), [Anthropic terms](https://www.anthropic.com/legal/consumer-terms).
 
 GiviLoop does not claim provider authorization for its browser integration. The manual workflow removes automatic website extraction; it is not a blanket certification for every account or use. Local inference is available for automatic reviews without this website dependency. [Detailed provider-access note](accesso-provider.md).
 

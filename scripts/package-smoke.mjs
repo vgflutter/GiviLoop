@@ -21,7 +21,7 @@ function run(command, args, options = {}) {
 try {
   const [pack] = JSON.parse(run(process.execPath, [npm, "pack", "--json", "--pack-destination", temporary]));
   for (const { path: name } of pack.files) {
-    assert.ok(name.startsWith("dist/") || ["README.md", "LICENSE", "package.json", "docs/accesso-provider.md", "docs/troubleshooting.md", "docs/release-readiness-2026-09-21.md", "CONTRIBUTING.md", "docs/ollama.md", "docs/dwarfstar.md", "docs/local-inference-validation-2026-09-21.md", "docs/local-engines.md", "docs/production-validation-2026-09-21.md", "docs/chatgpt-403-resolution-2026-09-21.md", "docs/usage.md", "docs/double-check.md", "docs/roadmap.md", "examples/double-check/sum.ts", "docs/costs-and-access.md", "docs/releases/0.3.0.md", "docs/releases/0.3.1.md", "docs/demo.md", "docs/e2e-validation-2026-09-21.md", "docs/capabilities-and-validation-2026-09-22.md", "examples/double-check/verify.mjs"].includes(name), `Unexpected package file: ${name}`);
+    assert.ok(name.startsWith("dist/") || ["README.md", "LICENSE", "package.json", "docs/web-providers.md", "docs/accesso-provider.md", "docs/troubleshooting.md", "docs/release-readiness-2026-09-21.md", "CONTRIBUTING.md", "docs/ollama.md", "docs/dwarfstar.md", "docs/local-inference-validation-2026-09-21.md", "docs/local-engines.md", "docs/production-validation-2026-09-21.md", "docs/chatgpt-403-resolution-2026-09-21.md", "docs/usage.md", "docs/double-check.md", "docs/roadmap.md", "examples/double-check/sum.ts", "docs/costs-and-access.md", "docs/releases/0.3.0.md", "docs/releases/0.3.1.md", "docs/demo.md", "docs/e2e-validation-2026-09-21.md", "docs/capabilities-and-validation-2026-09-22.md", "examples/double-check/verify.mjs"].includes(name), `Unexpected package file: ${name}`);
   }
   for (const required of ["README.md", "LICENSE", "package.json", ...JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")).files.filter(name => !name.endsWith("/") && path.extname(name))]) {
     assert.ok(pack.files.some(file => file.path === required), `Missing package file: ${required}`);
@@ -46,7 +46,7 @@ try {
   const env = { ...process.env, GIVILOOP_TEST_DIST_DIR: dist };
   const unitOutput = run(process.execPath, ["--test", "--test-reporter=tap", ...tests], { env });
   const browser = process.argv.includes("--browser");
-  const browserOutput = browser ? run(process.execPath, ["--test", "--test-reporter=tap", "--test-concurrency=1", "test/browser/roundtrip.test.mjs"], { env }) : "";
+  const browserOutput = browser ? run(process.execPath, ["--test", "--test-reporter=tap", "--test-concurrency=1", "test/browser/roundtrip.test.mjs"], { env, timeout: 300000 }) : "";
   const audit = JSON.parse(run(process.execPath, [npm, "audit", "--json"], { cwd: consumer }));
   const report = {
     version: manifest.version, files: pack.files.map(item => item.path), archiveBytes: pack.size,

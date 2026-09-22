@@ -12,6 +12,113 @@ import { cliPath, distDir, fixture, repoRoot } from "../helpers.mjs";
 const preload = fileURLToPath(new URL("../fixtures/browser-site.mjs", import.meta.url));
 const answer = "Review verificata: più contesto è utile.\nSeconda riga.";
 
+const webCases = [
+  { provider: "deepseek-web", origin: "https://chat.deepseek.com", login: "/sign_in",
+    input: '<textarea id="chat-input" placeholder="Message DeepSeek"></textarea>',
+    response: '<div class="ds-message"><div class="ds-markdown"></div></div>', content: '.ds-markdown' },
+  { provider: "claude-web", origin: "https://claude.ai", login: "/login",
+    input: '<div class="ProseMirror" contenteditable="true"></div>',
+    response: '<div data-is-streaming="true"><div class="font-claude-response"></div></div>', content: '.font-claude-response' },
+  { provider: "gemini-web", origin: "https://gemini.google.com", input: '<rich-textarea><div contenteditable="true" role="textbox"></div></rich-textarea>',
+    response: '<model-response><message-content><div class="markdown"></div></message-content></model-response>', content: '.markdown' },
+];
+
+function otherFixture(t, spec, incomplete = false) {
+  const f = setup(t);
+  f.env.GIVILOOP_TEST_ORIGIN = spec.origin;
+  writeFileSync(f.env.GIVILOOP_TEST_PAGE, `<!doctype html><html><style>body {white-space:pre-wrap}</style><body>
+    ${spec.input}<button aria-label="Send message">Send</button>
+    <div id="conversation">${spec.response.replace('></div>', '>Previous answer</div>')}</div>
+    <script>
+    const input=document.querySelector('textarea,[contenteditable]');
+    const send=()=>{
+      window.captureSubmission({prompt:input.value ?? input.innerText});
+      const template=document.createElement('template');template.innerHTML=${JSON.stringify(spec.response)};
+      const item=template.content.firstElementChild;document.querySelector('#conversation').append(item);
+      item.querySelector(${JSON.stringify(spec.content)}).textContent=${JSON.stringify(answer)};
+      const codeCopy=document.createElement('button');codeCopy.setAttribute('aria-label','Copy code');item.append(codeCopy);
+      ${incomplete ? '' : `setTimeout(()=>{item.setAttribute('data-is-streaming','false');const copy=document.createElement('button');copy.setAttribute('aria-label','Copy response');item.append(copy);const retry=document.createElement('button');retry.setAttribute('aria-label','Regenerate');item.append(retry);},900);`}
+    };
+    document.querySelector('button').onclick=send;
+    input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}};
+    </script></body></html>`);
+  return f;
+}
+
+for (const spec of webCases) {
+  test(`${spec.provider}: CLI text review -> one send -> complete answer -> MCP read`, { timeout: 30_000 }, async t => {
+    const f = otherFixture(t, spec);
+    writeFileSync(path.join(f.repo, 'code.txt'), 'Source context è');
+    const sent = await cli(f, 'ask', ['--send', spec.provider, '--question', 'Review', '--file', 'code.txt', '--mode', 'auto', '--headless', '--browser-profile', f.profile, '--response-stable-ms', '100', '--max-wait-ms', '5000']);
+    assert.equal(sent.code, 0, sent.stderr);
+    const run = f.latest();
+    assert.equal(readFileSync(run.response, 'utf8'), answer);
+    assert.equal(JSON.parse(readFileSync(run.metadata)).targetProvider, spec.provider.replace('-web', '-chat'));
+    const status = JSON.parse(readFileSync(path.join(run.dir, 'browser-status.json')));
+    assert.equal(status.provider, spec.provider);
+    assert.equal(status.outcome, 'completed');
+    assert.equal(f.events().filter(e => e.action === 'submit').length, 1);
+    assert.match(f.events().find(e => e.action === 'submit').prompt, /Source context è/);
+    const client = await connect(t, f);
+    const read = await client.callTool({ name: 'givi_read_external_review', arguments: {repositoryPath:f.repo, runId:run.id} });
+    assert.ok(read.content.some(item => item.type === 'text' && item.text.includes(answer)));
+  });
+
+  test(`${spec.provider}: MCP prepare and send preserve the chosen destination`, { timeout: 30_000 }, async t => {
+    const f = otherFixture(t, spec);
+    const prepared = await cli(f, 'ask', ['--question', 'Review', '--target-provider', spec.provider.replace('-web', '-chat')]);
+    assert.equal(prepared.code, 0, prepared.stderr);
+    const client = await connect(t, f);
+    const result = await client.callTool({name:'givi_send_to_web_llm', arguments:{repositoryPath:f.repo, webProvider:spec.provider, mode:'auto', headless:true, browserProfile:f.profile, responseStableMs:100, maxWaitMs:5000}});
+    assert.notEqual(result.isError, true, JSON.stringify(result));
+    assert.equal(readFileSync(f.latest().response,'utf8'),answer);
+    assert.equal(f.events().filter(e=>e.action==='submit').length,1);
+  });
+
+  test(`${spec.provider}: a paused answer with only a code-copy button is never saved or resent`, { timeout: 30_000 }, async t => {
+    const f = otherFixture(t, spec, true);
+    const sent = await cli(f, 'ask', ['--send',spec.provider,'--question','Review','--mode','auto','--headless','--browser-profile',f.profile,'--response-stable-ms','100','--max-wait-ms','1600']);
+    assert.equal(sent.code,1);
+    assert.match(sent.stderr,/RESPONSE_INCOMPLETE/);
+    assert.equal(existsSync(f.latest().response),false);
+    assert.equal(f.events().filter(e=>e.action==='submit').length,1);
+  });
+
+  if (spec.login) test(`${spec.provider}: login redirect stops before filling or sending`, { timeout: 15_000 }, async t => {
+    const f = otherFixture(t,spec);
+    f.env.GIVILOOP_TEST_LOGIN_PATH=spec.login;
+    const probe=await cli(f,'browser',['check','--provider',spec.provider,'--headless','--browser-profile',f.profile]);
+    assert.equal(probe.code,1);
+    const report=JSON.parse(probe.stdout);
+    assert.equal(report.errorCode,'LOGIN_REQUIRED');
+    assert.equal(report.provider,spec.provider);
+    assert.match(report.nextStep,new RegExp(`--provider ${spec.provider}`));
+    assert.equal(f.events().filter(e=>e.action==='submit').length,0);
+  });
+}
+
+test('Gemini first-use cookie choice temporarily restores a background window without duplicate submission', { timeout: 30_000 }, async t => {
+  const f = otherFixture(t, webCases[2]);
+  const html=readFileSync(f.env.GIVILOOP_TEST_PAGE,'utf8');
+  writeFileSync(f.env.GIVILOOP_TEST_PAGE,html.replace('</body>', '<div role="dialog" style="position:fixed;inset:0;background:white"><button onclick="this.parentElement.remove()">Rifiuta tutto</button></div></body>'));
+  const sent=await cli(f,'ask',['--send','gemini-web','--question','Review','--mode','auto','--background','--browser-profile',f.profile,'--response-stable-ms','100','--max-wait-ms','5000']);
+  assert.equal(sent.code,0,sent.stderr);
+  assert.match(sent.stderr,/initial cookie choice/);
+  assert.equal(readFileSync(f.latest().response,'utf8'),answer);
+  assert.equal(f.events().filter(e=>e.action==='submit').length,1);
+});
+
+test('DeepSeek does not mistake the submitted user markdown and its copy button for an answer', {timeout:30_000},async t=>{
+  const f=otherFixture(t,webCases[0],true);
+  const html=readFileSync(f.env.GIVILOOP_TEST_PAGE,'utf8').replace("codeCopy.setAttribute('aria-label','Copy code')","codeCopy.setAttribute('aria-label','Copy response')");
+  writeFileSync(f.env.GIVILOOP_TEST_PAGE,html);
+  const sent=await cli(f,'ask',['--send','deepseek-web','--question','Review','--mode','auto','--headless','--browser-profile',f.profile,'--response-stable-ms','100','--max-wait-ms','1600']);
+  assert.equal(sent.code,1);
+  assert.match(sent.stderr,/RESPONSE_INCOMPLETE/);
+  assert.equal(existsSync(f.latest().response),false);
+  assert.equal(f.events().filter(e=>e.action==='submit').length,1);
+});
+
 for (const headless of [true, false]) test(`${headless ? "headless" : "native headed"} browser preserves native cookies and closes cleanly`, { timeout: 30_000 }, async t => {
   const f = fixture(t), profile = path.join(f.root, "native-store-profile");
   const { chromium } = createRequire(path.join(distDir, "cli.js"))("playwright");

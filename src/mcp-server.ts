@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { WEB_CONFIG, WEB_PROVIDERS, TARGET_PROVIDERS, webProvider, targetForWeb, webForTarget, assertWebTarget, type WebProvider, type TargetProvider } from "./providers/web-config.js";
 import { redactSecrets } from "./redaction.js";
 import { LOCAL_PROVIDERS } from "./providers/local-types.js";
 
@@ -24,14 +25,12 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import {
-  sendToChatGptWeb,
+  sendToWebChat,
   type ChatGptWebMode,
   type ChatGptModelSelection,
 } from "./providers/chatgpt-web.js";
 
-type TargetProvider = "chatgpt-chat" | "claude-chat";
 type ReviewMode = "git-only" | "agent-context";
-type WebProvider = "chatgpt-web" | "claude-web";
 type WebDeliveryMode = ChatGptWebMode;
 type ExternalReviewHandling = "analyze-only" | "act";
 
@@ -208,7 +207,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             targetProvider: {
               type: "string",
-              enum: ["chatgpt-chat", "claude-chat"],
+              enum: [...TARGET_PROVIDERS],
               description:
                 "External reviewer provider. Use chatgpt-chat by default.",
               default: "chatgpt-chat",
@@ -264,7 +263,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             targetProvider: {
               type: "string",
-              enum: ["chatgpt-chat", "claude-chat"],
+              enum: [...TARGET_PROVIDERS],
               description:
                 "External reviewer provider. Use chatgpt-chat by default.",
               default: "chatgpt-chat",
@@ -294,7 +293,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: TOOL_SEND_TO_WEB_LLM,
         description:
-          "Launch a local web LLM bridge for an already prepared GiviLoop review request. If the selected run is a source archive, attach its source-context.zip automatically. The automatic provider is chatgpt-web. Anonymous sessions work when the website allows them; otherwise login is required. Claude currently uses manual copy/ingest only.",
+          "Launch a local web LLM bridge for an already prepared GiviLoop review request. For ChatGPT source-archive runs, attach source-context.zip automatically. Browser providers: ChatGPT, DeepSeek, Claude and Gemini. No API key. Anonymous sessions work when allowed; otherwise use browser login --provider. New providers are experimental and text-only; ZIP uploads and automated model selection are ChatGPT-only.",
         inputSchema: {
           type: "object",
           properties: {
@@ -305,9 +304,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             webProvider: {
               type: "string",
-              enum: ["chatgpt-web"],
+              enum: [...WEB_PROVIDERS],
               description:
-                "Automatic web provider. Only chatgpt-web is implemented; Claude requires manual copy/ingest.",
+                "Browser provider, no API key. Gemini anonymous reviews are live-validated. DeepSeek/Claude authenticated generation remains unverified. New adapters are experimental, text-only, using the website current/default model.",
               default: "chatgpt-web",
             },
             mode: {
@@ -511,9 +510,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             webProvider: {
               type: "string",
-              enum: ["chatgpt-web"],
+              enum: [...WEB_PROVIDERS],
               description:
-                "Automatic web provider. Only chatgpt-web is implemented; Claude requires manual copy/ingest.",
+                "Browser provider, no API key. Gemini anonymous reviews are live-validated. DeepSeek/Claude authenticated generation remains unverified. New adapters are experimental, text-only, using the website current/default model.",
               default: "chatgpt-web",
             },
             mode: {
@@ -941,12 +940,6 @@ async function askWebLlm(args: AskWebLlmArgs, signal?: AbortSignal): Promise<{
     throw new Error(`Repository path does not exist: ${repositoryPath}`);
   }
 
-  if (webProvider === "claude-web") {
-    throw new Error(
-      "claude-web is not implemented yet. Use chatgpt-web for automated questions, or ask Claude manually for now.",
-    );
-  }
-
   const giviOutboxDir = path.join(repositoryPath, ".giviloop", "outbox");
   const giviInboxDir = path.join(repositoryPath, ".giviloop", "inbox");
   mkdirSync(giviOutboxDir, { recursive: true });
@@ -980,7 +973,8 @@ async function askWebLlm(args: AskWebLlmArgs, signal?: AbortSignal): Promise<{
   pruneOldReviewRuns(repositoryPath, MAX_REVIEW_RUNS);
 
   const mode = args.mode ?? "auto";
-  const result = await sendToChatGptWeb({
+  const result = await sendToWebChat({
+    webProvider,
     signal,
     repositoryPath,
     requestPath: reviewRun.requestPath,
@@ -1041,12 +1035,6 @@ async function sendPreparedReviewToWebLlm(
     throw new Error(`Repository path does not exist: ${repositoryPath}`);
   }
 
-  if (webProvider === "claude-web") {
-    throw new Error(
-      "claude-web is not implemented yet. Prepare with targetProvider=claude-chat and use manual copy for now, or add a Claude web provider before selecting claude-web.",
-    );
-  }
-
   const outboxDir = path.join(repositoryPath, ".giviloop", "outbox");
   const inboxDir = path.join(repositoryPath, ".giviloop", "inbox");
   mkdirSync(outboxDir, { recursive: true });
@@ -1072,17 +1060,15 @@ async function sendPreparedReviewToWebLlm(
   const metadata = selectedRun ? readReviewRunMetadata(selectedRun) : undefined;
   const targetProvider = readMetadataString(metadata, "targetProvider");
 
-  if (targetProvider && targetProvider !== "chatgpt-chat") {
-    throw new Error(
-      `Selected request targets ${targetProvider}. Automated web sending currently supports chatgpt-chat only. Use manual copy/ingest for this run or create a chatgpt-chat request.`,
-    );
-  }
+  const priorWebProvider = metadata ? readWebProvider(metadata) : undefined;
+  assertWebTarget(targetProvider ?? (priorWebProvider ? targetForWeb(priorWebProvider) : undefined), webProvider);
 
   const attachmentPaths = selectedRun
     ? readPreparedRunAttachmentPaths(selectedRun, metadata)
     : [];
   const mode = args.mode ?? "prefill";
-  const result = await sendToChatGptWeb({
+  const result = await sendToWebChat({
+    webProvider,
     signal,
     repositoryPath,
     requestPath: externalReviewRequestPath,
@@ -1138,10 +1124,10 @@ function buildWebLlmToolResponse(result: {
 } {
   const modeNextStep =
     result.mode === "prefill"
-      ? "Review the prefilled prompt in ChatGPT and submit it manually."
+      ? `Review the prefilled prompt in ${WEB_CONFIG[result.webProvider].name} and submit it manually.`
       : result.mode === "submit"
-        ? "ChatGPT received the prompt. Copy the response back into GiviLoop when it finishes."
-        : "ChatGPT response was saved to the GiviLoop inbox.";
+        ? `${WEB_CONFIG[result.webProvider].name} received the prompt. Copy the response back into GiviLoop when it finishes.`
+        : `${WEB_CONFIG[result.webProvider].name} response was saved to the GiviLoop inbox.`;
 
   return {
     content: [
@@ -1313,7 +1299,7 @@ function prepareExternalReview(args: PreparedReviewArgs): PrepareResult {
   const reviewPackagePath = path.join(giviOutboxDir, "review-package.md");
   const promptPath = path.join(
     giviOutboxDir,
-    provider === "claude-chat" ? "claude-prompt.md" : "chatgpt-prompt.md",
+    `${WEB_CONFIG[webForTarget(provider)].profile}-prompt.md`,
   );
   const requestPath = path.join(giviOutboxDir, "external-review-request.md");
 
@@ -1605,7 +1591,7 @@ function buildProviderPrompt(
   provider: TargetProvider,
   reviewPackage: string,
 ): string {
-  const providerName = provider === "claude-chat" ? "Claude" : "ChatGPT";
+  const providerName = WEB_CONFIG[webForTarget(provider)].name;
 
   return `You are ${providerName}, acting as an external senior software reviewer.
 
@@ -2177,6 +2163,7 @@ function writeAdvisoryRunMetadata(
     createdAt: new Date().toISOString(),
     mode: "advisory-question",
     webProvider: input.webProvider,
+    targetProvider: targetForWeb(input.webProvider),
     repositoryPath: input.repositoryPath,
     question: input.question,
     attachedFiles: input.attachedFiles,
@@ -2477,14 +2464,13 @@ function readTargetProvider(input: Record<string, unknown>): TargetProvider {
   }
 
   if (
-    targetProviderRaw === "chatgpt-chat" ||
-    targetProviderRaw === "claude-chat"
+    (TARGET_PROVIDERS as readonly string[]).includes(targetProviderRaw)
   ) {
-    return targetProviderRaw;
+    return targetProviderRaw as TargetProvider;
   }
 
   throw new Error(
-    `Invalid targetProvider: ${targetProviderRaw}. Use chatgpt-chat or claude-chat.`,
+    `Invalid targetProvider: ${targetProviderRaw}. Use ${TARGET_PROVIDERS.join(", ")}.`,
   );
 }
 
@@ -2495,13 +2481,7 @@ function readWebProvider(input: Record<string, unknown>): WebProvider | undefine
     return undefined;
   }
 
-  if (providerRaw === "chatgpt-web" || providerRaw === "claude-web") {
-    return providerRaw;
-  }
-
-  throw new Error(
-    `Invalid webProvider: ${providerRaw}. Use chatgpt-web or claude-web.`,
-  );
+  return webProvider(providerRaw);
 }
 
 function readWebDeliveryMode(

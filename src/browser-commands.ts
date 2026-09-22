@@ -1,3 +1,4 @@
+import { WEB_CONFIG, type WebProvider } from "./providers/web-config.js";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import os from "node:os";
@@ -40,14 +41,16 @@ export function diagnoseBrowser(profile = browserProfilePath()) {
 }
 
 /** Access probe only: never fill a composer, submit, or read conversation text. */
-export async function checkBrowserAccess(profile = browserProfilePath(), headless = false, timeoutMs = 30_000, verificationWait?: number) {
+export async function checkBrowserAccess(profile: string | undefined = undefined, headless = false, timeoutMs = 30_000, verificationWait?: number, provider: WebProvider = "chatgpt-web") {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60_000) {
     throw new Error("Browser check timeout must be an integer from 1 to 60000 ms.");
   }
+  profile ??= browserProfilePath(provider);
+  const config = WEB_CONFIG[provider];
   const verificationWaitMs = verificationTimeout(verificationWait, headless);
   const report = {
-    checkedAt: new Date().toISOString(), profile: path.resolve(profile), headless, transport: headless ? "playwright" : "native-cdp",
-    ready: false, submitted: false, sessionCookieReadable: false,
+    provider, checkedAt: new Date().toISOString(), profile: path.resolve(profile), headless, transport: headless ? "playwright" : "native-cdp",
+    ready: false, submitted: false, sessionCookieReadable: provider === "chatgpt-web" ? false : null as boolean | null,
     authentication: "unknown", errorCode: undefined as string | undefined,
     verificationRequired: false, verificationCompleted: false,
     verificationCookieStored: false, verificationExpiresAt: null as string | null,
@@ -56,15 +59,15 @@ export async function checkBrowserAccess(profile = browserProfilePath(), headles
   let context: Awaited<ReturnType<typeof launchChatBrowser>> | undefined;
   try {
     context = await launchChatBrowser(report.profile, headless);
-    report.sessionCookieReadable = (await context.cookies("https://chatgpt.com")).some(cookie => cookie.name.includes("session-token"));
+    if (provider === "chatgpt-web") report.sessionCookieReadable = (await context.cookies(config.url)).some(cookie => cookie.name.includes("session-token"));
     const page = context.pages()[0] ?? await context.newPage();
-    await navigateToChat(page, "https://chatgpt.com/", timeoutMs, verificationWaitMs, async () => {
+    await navigateToChat(page, config.url, timeoutMs, verificationWaitMs, async () => {
       report.verificationRequired = true;
       await showBrowser(context!, page);
       console.error(`GiviLoop: complete the browser verification in Chrome. Waiting up to ${Math.ceil(verificationWaitMs / 1000)} seconds; this check sends no prompt.`);
-    });
+    }, provider);
     report.verificationCompleted = report.verificationRequired;
-    await waitForChatInput(page, timeoutMs);
+    await waitForChatInput(page, timeoutMs, provider);
     const loginVisible = await page.getByRole("button", { name: /^(Log in|Sign in|Accedi)$/i }).first().isVisible();
     report.ready = true;
     report.authentication = loginVisible ? "anonymous" : report.sessionCookieReadable ? "session available" : "unknown";
@@ -75,7 +78,7 @@ export async function checkBrowserAccess(profile = browserProfilePath(), headles
     report.nextStep = error instanceof BrowserRunError ? error.message : "Browser access could not be inspected. Run givi doctor.";
   } finally {
     if (context) {
-      const clearance = (await context.cookies("https://chatgpt.com").catch(() => [])).find(cookie => cookie.name === "cf_clearance");
+      const clearance = (await context.cookies(config.url).catch(() => [])).find(cookie => cookie.name === "cf_clearance");
       report.verificationCookieStored = Boolean(clearance);
       if (clearance && clearance.expires > 0) report.verificationExpiresAt = new Date(clearance.expires * 1000).toISOString();
     }
@@ -84,14 +87,15 @@ export async function checkBrowserAccess(profile = browserProfilePath(), headles
   return report;
 }
 
-export async function openLoginBrowser(profile = browserProfilePath()): Promise<string> {
+export async function openLoginBrowser(profile: string | undefined = undefined, provider: WebProvider = "chatgpt-web"): Promise<string> {
+  profile ??= browserProfilePath(provider);
   const executable = chromeExecutable();
   if (!executable) throw new Error("Google Chrome was not found. Install it or set GIVILOOP_CHROME_PATH to its executable.");
   const resolved = path.resolve(profile);
   mkdirSync(resolved, { recursive: true });
   const chromeArgs = [
     `--user-data-dir=${resolved}`, "--no-first-run", "--no-default-browser-check",
-    "--new-window", "--start-maximized", "https://chatgpt.com/",
+    "--new-window", "--start-maximized", WEB_CONFIG[provider].url,
   ];
   // LaunchServices brings the login app to the foreground on macOS. A profile
   // previously used for background automation must not reopen a minimized tab.

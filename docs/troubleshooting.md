@@ -113,3 +113,14 @@ For local runtimes use `givi doctor --provider NAME`, optionally with `--base-ur
 Local run state is in `local-status.json`; token counts, model, timing and request/response hashes are in `local-usage.json`. On a storage failure, compare the recorded response hash with the saved response before associating usage with that text. A failed attempt does not establish a completed new review.
 
 `REVIEW_RUN_BUSY` means another browser or local request owns the run's `review.lock`. Do not remove it while the recorded PID is running. Ctrl+C and MCP request cancellation release local inference locks. A force-killed process may leave a stale lock: confirm that its PID has exited, then remove only that run's lock. Pending, active and locked runs are preserved by retention.
+
+
+## Multiple web providers
+
+Use the same `--provider NAME-web` with `browser login`, `browser check` and `doctor`, and `--send NAME-web` with `ask`/`send`. Defaults remain ChatGPT. Profiles live separately under `~/.giviloop/browser-profiles/{chatgpt,deepseek,claude,gemini}`; login in ordinary Chrome or another provider profile does not authenticate these profiles.
+
+DeepSeek `/sign_in`, Claude `/login` and Google account redirects stop with `LOGIN_REQUIRED` before sending. A usable anonymous composer is accepted. For new chats `sessionCookieReadable: null` means cookie authentication was not inspected; it does not mean signed out. `ready: true` proves a usable composer, not a successful generation or model identity.
+
+`MODEL_SELECTION_UNSUPPORTED` / `ATTACHMENT_UNSUPPORTED` mean the new adapter currently accepts the site's selected/default model and inline text only. Use `ask --file` or `prepare`; ZIP upload and `--model` are ChatGPT-only. `BROWSER_SETUP_REQUIRED` means initial Gemini cookie setup did not finish: open that provider's login browser, finish setup and quit Chrome. A first-use cookie choice may briefly restore a background window. No prompt is sent while that choice is pending.
+
+An incomplete response is never silently substituted with user text, a previous answer or a reasoning pane. Check the conversation before retrying after `RESPONSE_INCOMPLETE`, `RESPONSE_TIMEOUT` or `SUBMISSION_UNCERTAIN`: the earlier prompt may already have been sent. [Current live validation](web-providers.md).

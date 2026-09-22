@@ -54,7 +54,7 @@ Only loopback endpoints are accepted (`--base-url` / MCP `baseUrl`). The HTTP cl
 
 See [llama.cpp, LM Studio and MLX setup](local-engines.md), [Ollama setup and limits](ollama.md), [DwarfStar setup and hardware requirements](dwarfstar.md), and [measured validation](local-inference-validation-2026-09-21.md).
 
-For ChatGPT access, `givi browser check` inspects the dedicated profile without sending a prompt. Visible reviews wait for human verification and resume the same request; background mode temporarily shows the window. `--verification-wait-ms` controls the wait. Repeated challenges stop explicitly, and the website can require verification again even with saved cookies. See [browser verification](troubleshooting.md#human-verification-and-repeated-challenges).
+For browser access, `givi browser check --provider NAME-web` inspects the dedicated profile without sending a prompt. Visible reviews wait for human verification and resume the same request; background mode temporarily shows the window. `--verification-wait-ms` controls the wait. Repeated challenges stop explicitly, and the website can require verification again even with saved cookies. See [browser verification](troubleshooting.md#human-verification-and-repeated-challenges).
 
 ## IDE Prompts
 
@@ -199,10 +199,10 @@ GiviLoop commands share one run model under `.giviloop/runs/<run-id>/`.
 - `archive` is the optional ChatGPT source-archive entry point. It creates `source-context.zip`, `source-manifest.json`, `external-review-request.md`, and metadata. With `--send chatgpt-web --mode auto`, it uploads the zip, sends the request, and saves the response in the same run.
 - `ask` creates a focused question run with selected text files. Add `--send` and a supported provider to retrieve and save a review automatically.
 - `prepare` is the Git-change review path. It creates a review package from git diff and untracked files, but does not send it by itself.
-- `send` sends a prepared run to a selected local runtime or ChatGPT web. Use `--run-id` to select a particular request. Only the web path accepts source archives; it automatically attaches `source-context.zip`.
+- `send` sends a prepared run to a selected local runtime or browser chat. Use `--run-id` to select a particular request. Only the ChatGPT web path accepts source archives; it automatically attaches `source-context.zip`.
 - `copy` and `ingest` are the manual fallback pair. Use them for Claude today, provider UI issues, or cases where you want to paste and review before sending.
 
-Provider targeting is intentionally conservative: automated web sending currently supports `chatgpt-chat` through `chatgpt-web`. Claude prompts are generated for manual review until Claude web automation is implemented.
+Browser destinations are `chatgpt-web`, `deepseek-web`, `claude-web` and `gemini-web`, each with its own default profile. A prepared run must match its destination (`--target-provider NAME-chat`); `ask --send NAME-web` infers the target. New adapters accept inline text, with ZIP uploads and automatic model selection limited to ChatGPT. DeepSeek/Claude authenticated generation is not yet live-validated. See [provider commands and validation](web-providers.md).
 
 ## Output Files
 
@@ -243,7 +243,7 @@ Implemented now:
 - Local DwarfStar inference through its native HTTP server
 - Local llama.cpp and LM Studio inference
 - Experimental MLX-LM inference on Apple Silicon
-- Optional ChatGPT web automation through native Chrome and Playwright
+- Optional browser automation through native Chrome and Playwright; [validation by provider](web-providers.md)
 
 Claude is currently available through the manual copy/ingest workflow.
 

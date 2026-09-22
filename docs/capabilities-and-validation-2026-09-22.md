@@ -1,5 +1,6 @@
 # GiviLoop: capacità, prove reali e valore — 22 settembre 2026
 
+> Snapshot delle prove precedenti. Per i nuovi adapter browser e la validazione Gemini successiva, vedere [Browser providers](web-providers.md).
 GiviLoop ha un valore concreto come ponte CLI/MCP per ottenere una seconda review, conservarla nel repository e farne verificare i rilievi all'agente. Le prove di oggi confermano il percorso ChatGPT **con e senza login**, quando il sito concede l'accesso, e quattro motori locali. Questo giustifica un piccolo pilot open source; non dimostra ancora risparmio totale di token, superiorità rispetto alla review dell'agente o affidabilità universale delle chat web.
 
 Ambiente: macOS arm64, Node 22.21.1, Chrome installato, checkout sorgente. Le richieste live contengono solo fixture sintetiche. I profili anonimi sono nuovi e separati dal profilo autenticato: nessuna disconnessione, copia di cookie o modifica delle credenziali. Non sono stati selezionati modelli web specifici. L'accesso a un campo di testo, una risposta completata e una review corretta sono tre verifiche diverse.

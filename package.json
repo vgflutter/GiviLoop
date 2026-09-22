@@ -42,7 +42,8 @@
     "docs/demo.md",
     "docs/e2e-validation-2026-09-21.md",
     "docs/releases/0.3.1.md",
-    "docs/capabilities-and-validation-2026-09-22.md"
+    "docs/capabilities-and-validation-2026-09-22.md",
+    "docs/web-providers.md"
   ],
   "engines": {
     "node": ">=20"

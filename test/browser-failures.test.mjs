@@ -26,7 +26,7 @@ function scenario(t, settings = {}) {
   let now = 0;
   t.mock.method(Date, "now", () => now);
   const page = {
-    isClosed: () => closed, url: () => settings.origin ?? "https://chatgpt.com/",
+    isClosed: () => closed, url: () => (metrics.clicks ? settings.responseOrigin : undefined) ?? settings.origin ?? "https://chatgpt.com/",
     goto: async () => {
       metrics.navigations++;
       if (metrics.navigations <= (settings.navigationFailures ?? 0)) throw new Error("Navigation timeout");
@@ -219,4 +219,15 @@ test("an uploaded attachment without confirmation is not uploaded twice or submi
   assert.equal(f.status().submitted, false);
   assert.equal(f.status().phase, "uploading");
   assert.equal(existsSync(f.response), false);
+});
+
+
+test("leaving the provider during generation does not read or save a foreign answer", async t => {
+  const f = scenario(t, { responseOrigin: "https://example.test/" });
+  writeFileSync(f.response, "Previous completed review");
+  await assert.rejects(f.run(), /UNEXPECTED_ORIGIN/);
+  assert.equal(f.metrics.clicks, 1);
+  assert.equal(f.metrics.closes, 1);
+  assert.equal(f.status().submitted, true);
+  assert.equal(readFileSync(f.response, "utf8"), "Previous completed review");
 });

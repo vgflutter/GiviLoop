@@ -1,3 +1,5 @@
+import { WEB_CONFIG, type WebProvider } from "./web-config.js";
+import { otherMessages, otherSendControl, waitForOtherResponse } from "./other-web.js";
 import { type BrowserContext, type Locator, type Page } from "playwright";
 import { createHash } from "node:crypto";
 import {
@@ -13,6 +15,7 @@ export type ChatGptWebMode = "prefill" | "submit" | "auto";
 export type ChatGptModelSelection = "prefer" | "require";
 
 export type ChatGptWebOptions = {
+  webProvider?: WebProvider;
   repositoryPath: string;
   requestPath?: string;
   responsePath?: string;
@@ -40,13 +43,20 @@ export type ChatGptWebResult = {
   modelSelectionWarning?: string;
 };
 
-const DEFAULT_CHATGPT_URL = "https://chatgpt.com/";
 const DEFAULT_RESPONSE_STABLE_MS = 5_000;
 const DEFAULT_MAX_WAIT_MS = 180_000;
 
-export async function sendToChatGptWeb(
-  options: ChatGptWebOptions,
-): Promise<ChatGptWebResult> {
+export async function sendToChatGptWeb(options: ChatGptWebOptions): Promise<ChatGptWebResult> {
+  return sendToWebChat({ ...options, webProvider: "chatgpt-web" });
+}
+
+export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGptWebResult> {
+  const provider = options.webProvider ?? "chatgpt-web";
+  const config = WEB_CONFIG[provider];
+  if (!config) throw new Error("Unknown web provider.");
+  if (provider !== "chatgpt-web" && options.chatGptUrl) throw new Error("A custom ChatGPT URL cannot be used with another provider.");
+  if (provider !== "chatgpt-web" && options.model) throw new BrowserRunError("MODEL_SELECTION_UNSUPPORTED", `${config.name} model selection is not automated yet. Select it manually with givi browser login --provider ${provider}, close Chrome, then omit --model.`);
+  if (provider !== "chatgpt-web" && options.attachmentPaths?.length) throw new BrowserRunError("ATTACHMENT_UNSUPPORTED", `${config.name} currently accepts inline text context only. Use ask --file or prepare, not archive. No browser was opened.`);
   const repositoryPath = path.resolve(options.repositoryPath);
   assertRepositoryAllowedForExternalTransfer(repositoryPath);
 
@@ -71,7 +81,7 @@ export async function sendToChatGptWeb(
   const mode = options.mode ?? "prefill";
   const headless = options.headless ?? false;
   const background = options.background ?? false;
-  const providerUrl = options.chatGptUrl ?? DEFAULT_CHATGPT_URL;
+  const providerUrl = options.chatGptUrl ?? config.url;
   const verificationWaitMs = verificationTimeout(options.verificationWaitMs, headless);
 
   if (headless && mode !== "auto") {
@@ -103,11 +113,11 @@ export async function sendToChatGptWeb(
     }
   }
 
-  const userDataDir = path.resolve(options.userDataDir ?? browserProfilePath());
+  const userDataDir = path.resolve(options.userDataDir ?? browserProfilePath(provider));
   const statusPath = path.join(path.dirname(responsePath), "browser-status.json");
   const status = {
     startedAt: new Date().toISOString(), endedAt: undefined as string | undefined,
-    mode, headless, background, transport: headless ? "playwright" : "native-cdp", profile: userDataDir,
+    provider, mode, headless, background, transport: headless ? "playwright" : "native-cdp", profile: userDataDir,
     requestSha256: createHash("sha256").update(requestText).digest("hex"),
     phase: "launching", outcome: "running", submitted: false as boolean | "unknown",
     errorCode: undefined as string | undefined,
@@ -117,7 +127,7 @@ export async function sendToChatGptWeb(
     status.phase = phase;
     atomicWrite(statusPath, JSON.stringify(status, null, 2) + "\n");
   }
-  const release = acquireRunLock(path.dirname(responsePath), "chatgpt-web");
+  const release = acquireRunLock(path.dirname(responsePath), provider);
   let context: BrowserContext | undefined;
   let keepOpen = false;
   let operationFailed = false;
@@ -149,14 +159,20 @@ export async function sendToChatGptWeb(
       record("waiting-for-verification");
       await showBrowser(context!, page);
       console.error(`GiviLoop: complete the browser's human verification in the Chrome window. Waiting up to ${Math.ceil(verificationWaitMs / 1000)} seconds; the same request will resume automatically. No prompt has been sent.`);
-    });
+    }, provider);
     checkCancelled();
     if (status.verificationRequired) {
       status.verificationCompleted = true;
       if (background) await minimizeBrowser(context, page);
     }
     record("waiting-for-input");
-    await waitForChatInput(page, 15_000);
+    await waitForChatInput(page, 15_000, provider, async () => {
+      if (background) {
+        console.error("GiviLoop: showing Chrome for the website's initial cookie choice; it will minimize again before sending.");
+        await showBrowser(context!, page);
+      }
+    });
+    if (background && provider === "gemini-web") await minimizeBrowser(context, page);
     checkCancelled();
     assertChatOrigin(page, providerUrl);
     record("selecting-model");
@@ -166,7 +182,7 @@ export async function sendToChatGptWeb(
           modelSelection: options.modelSelection ?? "prefer",
         })
       : undefined;
-    if (options.model) await waitForChatInput(page, 15_000);
+    if (options.model) await waitForChatInput(page, 15_000, provider);
     checkCancelled();
     if (attachmentPaths.length > 0) {
       record("uploading");
@@ -180,7 +196,7 @@ export async function sendToChatGptWeb(
     record("filling");
     checkCancelled();
     assertChatOrigin(page, providerUrl);
-    await fillChatInput(page, requestText);
+    await chatInput(page, provider).fill(requestText, { timeout: 10_000 });
     checkCancelled();
     if (mode === "prefill") {
       status.outcome = "prefilled";
@@ -189,16 +205,19 @@ export async function sendToChatGptWeb(
       keepOpen = true;
       return { mode, requestPath, attachmentPaths, modelSelectionWarning };
     }
-    const assistantMessagesBefore = await countAssistantMessages(page);
+    const assistantMessagesBefore = provider === "chatgpt-web" ? await countAssistantMessages(page) : await otherMessages(page, provider).count();
     record("waiting-for-send");
-    const button = await waitForSendButton(page);
+    const button = provider === "chatgpt-web" ? await waitForSendButton(page) : await otherSendControl(page, provider);
     checkCancelled();
     assertChatOrigin(page, providerUrl);
     // A click can have reached the server even if Playwright loses the page.
     // Never retry a click or navigation after this point.
     status.submitted = "unknown";
     record("submitting");
-    try { await button.click({ timeout: 10_000 }); }
+    try {
+      if (provider === "deepseek-web") await button.press("Enter", { timeout: 10_000 });
+      else await button.click({ timeout: 10_000 });
+    }
     catch {
       throw new BrowserRunError("SUBMISSION_UNCERTAIN", "The send action could not be confirmed. Check the conversation before retrying to avoid sending the prompt twice.");
     }
@@ -212,11 +231,14 @@ export async function sendToChatGptWeb(
       return { mode, requestPath, attachmentPaths, modelSelectionWarning };
     }
     record("waiting-for-response");
-    const responseText = await waitForFinalAssistantResponse(page, {
+    const responseOptions = {
       assistantMessagesBefore,
       responseStableMs: options.responseStableMs ?? DEFAULT_RESPONSE_STABLE_MS,
       maxWaitMs: options.maxWaitMs ?? DEFAULT_MAX_WAIT_MS,
-    });
+    };
+    const responseText = provider === "chatgpt-web"
+      ? await waitForFinalAssistantResponse(page, { ...responseOptions, providerUrl })
+      : await waitForOtherResponse(page, provider, responseOptions);
     checkCancelled();
     // Finish interruptible cleanup before committing the response. A cancel
     // received while Chrome is closing must still preserve any prior response.
@@ -498,10 +520,6 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-async function fillChatInput(page: Page, text: string): Promise<void> {
-  await chatInput(page).fill(text, { timeout: 10_000 });
-}
-
 async function waitForSendButton(page: Page): Promise<Locator> {
   const selectors = [
     '[data-testid="composer-submit-button"]:visible',
@@ -540,6 +558,7 @@ async function assistantMessages(page: Page): Promise<Locator> {
 async function waitForFinalAssistantResponse(
   page: Page,
   options: {
+    providerUrl: string;
     assistantMessagesBefore: number;
     responseStableMs: number;
     maxWaitMs: number;
@@ -550,6 +569,7 @@ async function waitForFinalAssistantResponse(
   let lastChangedAt = Date.now();
 
   while (Date.now() - startedAt < options.maxWaitMs) {
+    assertChatOrigin(page, options.providerUrl);
     const blocker = await pageBlocker(page);
     if (blocker) throw blocker;
     const messages = await assistantMessages(page);

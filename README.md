@@ -39,11 +39,13 @@ npm run givi -- ask --repo . --file examples/double-check/sum.ts \
 
 GiviLoop saves the answer and prints its path. The example's `sum([])` should return zero but throws; ask your agent to check the finding before applying the fix. Run `node examples/double-check/verify.mjs` to reproduce this example independently.
 
-**Do not use `--headless` for ChatGPT:** it is currently unsupported in practice; live checks were blocked by site verification both with and without login. Use `--background`, which minimizes Chrome but can show a window at startup or during file uploads. Human verification may still require your action.
+**Do not use `--headless` for ChatGPT:** it is currently unsupported in practice; live checks were blocked by site verification both with and without login. Use `--background`, which minimizes Chrome but can show a window at startup or during file uploads or initial website setup. Human verification may still require your action.
 
 **Web access is experimental.** OpenAI's European terms prohibit automatic output extraction; technical success, anonymous access and MIT licensing do not establish permission. [Costs and access](docs/costs-and-access.md).
 
-**Claude currently supports manual transfer only; its automatic adapter is not implemented.** Prepare without `--send` (add `--target-provider claude-chat` for Claude), then use `givi copy --open` and `givi ingest` around your own paste/send/copy actions. For automatic local reviews, use [Ollama](docs/ollama.md), [llama.cpp, LM Studio or MLX](docs/local-engines.md). [DwarfStar](docs/dwarfstar.md) is also available, with trained-model validation still pending.
+**More browser chats, no API keys:** `--send gemini-web` has completed real anonymous reviews. `deepseek-web` and `claude-web` are experimental adapters with fixture tests; their authenticated generation is still unverified. Run `browser login --provider NAME` if needed, quit that Chrome, then `browser check --provider NAME`. New adapters accept inline text (`ask --file` / `prepare`); automated ZIP uploads and model selection remain ChatGPT-only. [Commands and validation](docs/web-providers.md).
+
+Manual `copy --open` / `ingest` works with all four prompt formats. [Local models](docs/local-engines.md) and [Ollama](docs/ollama.md) remain available; [DwarfStar](docs/dwarfstar.md) trained-model validation is pending.
 
 ## Use it from your coding agent
 
