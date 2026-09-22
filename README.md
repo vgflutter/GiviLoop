@@ -1,13 +1,15 @@
 # GiviLoop
 
-**Double-check your code. Put your existing chat access to work.**
+**Double-check your code. Save API tokens with your existing web chat.**
 
 GiviLoop sends selected code or Git changes to a second reviewer and brings the answer back to your coding agent. Keep the request, review and execution status together in your repository.
 
 CLI + MCP · Web chat + local models · Open source · MIT
 
 - **Double Check:** have your agent verify another model's findings before changing code.
-- **Avoid an extra API review bill:** use existing web chat access instead of a separately billed model API call. Chat quotas still apply; total token savings are not measured.
+- **Save API tokens on the second review:** use your existing web chat instead of making another token-billed model API call. GiviLoop sends the selected context and brings back the answer.
+
+**What “token savings” means:** if you would otherwise buy that review through an API, this avoids its separate API input/output token charges. The web chat still uses its plan's quotas, and your coding agent still uses tokens to prepare context and check the answer. **Total token savings are not measured.** [Costs and access](docs/costs-and-access.md).
 
 ## See it work
 
