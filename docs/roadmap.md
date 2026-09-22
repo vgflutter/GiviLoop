@@ -1,6 +1,6 @@
 # Product direction
 
-Proposal for discussion, 21 September 2026. Items below are **not implemented or release commitments**. The current product packages selected context, requests a review, saves the response and returns it to a coding agent through CLI/MCP.
+Updated for the 0.4.0 release, 22 September 2026. Items below are **not implemented or release commitments**. The current product packages selected context, requests a review, saves the response and returns it to a coding agent through CLI/MCP.
 
 ## Focus
 
@@ -10,7 +10,7 @@ Collect useful findings, false positives, onboarding failures and repeat usage b
 
 The review-to-agent loop already exists elsewhere: [CodeRabbit CLI](https://docs.coderabbit.ai/cli) supports local reviews and agent handoff; [revmux](https://github.com/umputun/revmux) describes supervised multi-agent review and finding verification. Merely calling two models is not a unique proposition. GiviLoop's proposed focus is a small, inspectable workflow with a reviewer the user chooses, local runtime support, and evidence for accepting or dismissing advice. Its value still needs to be demonstrated with users.
 
-## After 0.3.0: priorities
+## After 0.4.0: priorities
 
 | Order | Proposed feature | User value | First useful version |
 | --- | --- | --- | --- |
@@ -39,6 +39,17 @@ Measure before promising savings. GiviLoop already records token counts reported
 Rechecking changed context and returning a compact verified report are plausible ways to reduce repeated work. Compare them with the same reviewer receiving full context. Count all observable reviewer/verifier calls, latency, and correct findings; mark unknown costs as unknown. A local model has hardware and energy costs, and a second review may increase total tokens while still being useful.
 
 An optional later workflow could start with a local reviewer and escalate selected uncertain findings to another explicitly configured provider. Routing should follow an agreed budget and data-sharing policy; GiviLoop should not silently send code to a remote service.
+
+## First adoption cycle after 0.4.0
+
+The initial audience is developers who already use a coding agent and ask for a second opinion. The positioning is **a second review with a reviewer you choose, followed by evidence**, plus avoiding a separate API review charge when existing chat access is available. Do not sell unmeasured total-token savings or unrestricted website automation.
+
+- Invite 5–10 developers to try one small real change and return for a second. Use the existing Double Check issue template for voluntary feedback; no telemetry or private-source collection.
+- Measure installation/login/MCP friction, time to the first completed review, findings confirmed or dismissed, verification effort and whether users return within a week. Record actual counts and failure cases rather than setting a success claim in advance.
+- Prepare a short demo of one bug confirmed and one plausible finding dismissed. Clearly label synthetic examples and the real provider runs. Link the reproducible example and the current release; the existing video remains available until a new recording is made.
+- Share the release and a specific request for feedback with relevant coding-agent/MCP and open-source communities. This is a proposed outreach plan; no community posts or messages have been sent.
+
+The first adoption-focused addition should be a guided setup command: check prerequisites, select a provider, explain login needs, show the MCP configuration to copy, and run an opt-in public example. It must not modify editor configuration silently or imply that a successful composer check validates generation. Then add structured finding outcomes with evidence and a recheck tied to the changed source snapshot. More engines can wait for demonstrated demand.
 
 ## Community adoption experiment
 

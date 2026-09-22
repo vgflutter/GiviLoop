@@ -11,7 +11,7 @@ From a checkout, run `npm ci` and `npm run build`. Examples below use `npm run g
 To install a locally built archive:
 
 ```sh
-npm install -g /path/to/giviloop-0.3.1.tgz
+npm install -g /path/to/giviloop-0.4.0.tgz
 ```
 
 The package exposes `givi` and `givi-mcp`. Node.js 20+ is required; use Git for diff/archive flows, `zip` for archives, and a separately installed runtime with compatible weights for local inference. Clipboard flows use macOS/Windows system utilities, or `wl-clipboard`/`xclip` on Linux. Google Chrome is only needed for web automation.
