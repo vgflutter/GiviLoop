@@ -35,9 +35,11 @@ Do not remove `SingletonLock` while Chrome owns the profile, copy active profile
 
 ## Background versus headless
 
-`--background --mode auto` runs normal Chrome and verifies that the window is minimized. A startup window can appear; ZIP uploads also temporarily show Chrome to initialize its attachment controls, then minimize it again before sending. It requires a desktop session capable of minimizing windows.
+`--background --mode auto` starts normal Chrome without a startup window, then creates a background target already minimized and verifies its state. This avoids the usual foreground launch before minimization. ZIP uploads still temporarily show Chrome to initialize its attachment controls, then minimize it again before sending. It requires a desktop session capable of minimizing windows.
 
 On Linux, a bare Xvfb display does not provide a window manager and can produce `BACKGROUND_UNAVAILABLE`. The browser/package CI uses Xvfb plus Openbox and waits for window management to become available before testing native background sessions. A desktop requirement is separate from the website's access restrictions.
+
+On macOS, two real Claude MCP reviews completed with this startup path while monitoring the foreground application: neither GiviLoop-owned Chrome instance became foreground. The test does not independently certify every fullscreen/Spaces arrangement. Setup, human verification and ZIP uploads intentionally restore Chrome when needed; the window is minimized again before the review continues. Normal background startup does not reactivate VS Code or another app on a timer, so it does not pull you away from an app you choose to use during generation.
 
 `--headless --mode auto` does not create a visible window. **It is currently unusable for live ChatGPT reviews:** the release trial received HTTP 403, and the 22 September checks were challenged with both authenticated and anonymous profiles. No prompt was sent. Use `--background`. GiviLoop stops on the block; it does not silently switch modes, hide automation flags, retry rate limits, or bypass an account challenge.
 
@@ -121,6 +123,6 @@ Use the same `--provider NAME-web` with `browser login`, `browser check` and `do
 
 DeepSeek `/sign_in`, Claude `/login` and Google account redirects stop with `LOGIN_REQUIRED` before sending. A usable anonymous composer is accepted. For new chats `sessionCookieReadable: null` means cookie authentication was not inspected; it does not mean signed out. `ready: true` proves a usable composer, not a successful generation or model identity.
 
-`MODEL_SELECTION_UNSUPPORTED` / `ATTACHMENT_UNSUPPORTED` mean the new adapter currently accepts the site's selected/default model and inline text only. Use `ask --file` or `prepare`; ZIP upload and `--model` are ChatGPT-only. `BROWSER_SETUP_REQUIRED` means initial Gemini cookie setup did not finish: open that provider's login browser, finish setup and quit Chrome. A first-use cookie choice may briefly restore a background window. No prompt is sent while that choice is pending.
+`MODEL_SELECTION_UNSUPPORTED` / `ATTACHMENT_UNSUPPORTED` mean the new adapter currently accepts the site's selected/default model and inline text only. Use `ask --file` or `prepare`; ZIP upload and `--model` are ChatGPT-only. `BROWSER_SETUP_REQUIRED` means initial Gemini/Claude cookie setup did not finish: open that provider's login browser, finish setup and quit Chrome. A first-use cookie choice may briefly restore a background window. No prompt is sent while that choice is pending.
 
 An incomplete response is never silently substituted with user text, a previous answer or a reasoning pane. Check the conversation before retrying after `RESPONSE_INCOMPLETE`, `RESPONSE_TIMEOUT` or `SUBMISSION_UNCERTAIN`: the earlier prompt may already have been sent. [Current live validation](web-providers.md).

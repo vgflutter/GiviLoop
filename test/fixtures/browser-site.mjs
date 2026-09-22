@@ -12,7 +12,13 @@ const html = readFileSync(process.env.GIVILOOP_TEST_PAGE, "utf8");
 const log = process.env.GIVILOOP_TEST_BROWSER_LOG;
 async function instrument(context) {
   let providerNavigations = 0;
-  await context.exposeFunction("captureSubmission", value => {
+  await context.exposeFunction("captureSubmission", async value => {
+    if (process.env.GIVILOOP_TEST_CAPTURE_WINDOW_STATE) {
+      const page = context.pages().find(page => page.url().startsWith(process.env.GIVILOOP_TEST_ORIGIN));
+      const session = await context.newCDPSession(page);
+      try { value.windowState = (await session.send("Browser.getWindowForTarget")).bounds.windowState; }
+      finally { await session.detach(); }
+    }
     appendFileSync(log, JSON.stringify({ action: "submit", ...value }) + "\n");
   });
   await context.route("**/*", route => {

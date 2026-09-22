@@ -60,8 +60,10 @@ async function launch(profile: string, background: boolean): Promise<BrowserCont
   const port = await availablePort();
   const child = spawn(executable, [
     `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, "--remote-debugging-address=127.0.0.1",
-    "--no-first-run", "--no-default-browser-check", "--new-window",
-    ...(background ? ["--start-minimized"] : []), "about:blank",
+    "--no-first-run", "--no-default-browser-check",
+    // --start-minimized still activates Chrome on macOS. Start without a
+    // window, then create an explicitly background/minimized target over CDP.
+    ...(background ? ["--no-startup-window"] : ["--new-window", "about:blank"]),
   ], { stdio: ["ignore", "ignore", "pipe"] });
   let finished = false, startupError: Error | undefined, browser: Browser | undefined, closePromise: Promise<void> | undefined;
   let startupLogs = "";
@@ -116,6 +118,19 @@ async function launch(profile: string, background: boolean): Promise<BrowserCont
     browser = await chromium.connectOverCDP(announced, { timeout: 15000 });
     const context = browser.contexts()[0];
     if (!context) throw new NativeChromeError("BROWSER_LAUNCH_FAILED", "Chrome did not expose its dedicated profile.");
+    if (background) {
+      const session = await browser.newBrowserCDPSession();
+      try {
+        await session.send("Target.createTarget", {
+          url: "about:blank", newWindow: true, background: true, windowState: "minimized",
+        });
+        if (!context.pages().some(page => page.url() === "about:blank")) {
+          await context.waitForEvent("page", { timeout: 10_000, predicate: page => page.url() === "about:blank" });
+        }
+      } catch {
+        throw new NativeChromeError("BACKGROUND_UNAVAILABLE", "Chrome could not create a background window. Update Chrome or retry without --background. No prompt was sent.");
+      } finally { await session.detach().catch(() => {}); }
+    }
     // On a CDP connection Playwright's default close only disconnects. Own and
     // await Chrome's real shutdown so cookies flush and the profile lock releases.
     context.close = close;

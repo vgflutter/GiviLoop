@@ -108,7 +108,7 @@ npm run givi -- browser check --provider deepseek-web
 node scripts/web-acceptance.mjs --provider deepseek-web
 ```
 
-Repeat with `claude-web`. A check with `ready: true` and `submitted: false` only proves the composer is accessible; the real two-phase test and manual response assessment above are still required. If a verification loop occurs, stop and report the status instead of repeatedly clicking or relaunching. Use `--background`, not `--headless`, for normal reviews; a short visible startup/setup window can occur.
+Repeat with `claude-web`. A check with `ready: true` and `submitted: false` only proves the composer is accessible; the real two-phase test and manual response assessment above are still required. If a verification loop occurs, stop and report the status instead of repeatedly clicking or relaunching. Use `--background`, not `--headless`, for normal reviews; the window starts minimized without activation; setup, verification or uploads can still show it.
 
 **Readiness:** ChatGPT, anonymous Gemini and signed-in Claude have evidence for a limited pilot. DeepSeek delivery now works, but its corrected-code quality control failed; treat its findings as unverified suggestions, never automatic changes. All website adapters remain experimental. Passing these small cases is not a general model-quality benchmark or validation of long reasoning, specific subscription models, all locales or quota recovery. A stable multi-provider claim requires those remaining paths to be exercised and any observed failures corrected.
 

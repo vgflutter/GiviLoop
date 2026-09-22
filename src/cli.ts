@@ -1989,7 +1989,7 @@ Important options:
   --mode prefill|submit|auto
                             prefill only fills the prompt; submit sends it; auto waits and saves the answer.
   --headless                Diagnostic option; currently blocked by ChatGPT verification. Use --background.
-  --background              Minimize Chrome; shown at startup or for uploads. Requires auto; incompatible with --headless.
+  --background              Start Chrome minimized without activation; setup/uploads may show it. Requires auto; incompatible with --headless.
   --verification-wait-ms N  Wait for your verification tap (default 180000 headed, 0 headless; maximum 900000).
   --browser-profile PATH    Dedicated Chrome profile shared by browser login and send.
   --navigation-timeout-ms N

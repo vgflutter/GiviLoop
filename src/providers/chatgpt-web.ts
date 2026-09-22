@@ -172,7 +172,8 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
         await showBrowser(context!, page);
       }
     });
-    if (background && provider === "gemini-web") await minimizeBrowser(context, page);
+    // Every provider can temporarily restore the window for initial setup.
+    if (background) await minimizeBrowser(context, page);
     checkCancelled();
     assertChatOrigin(page, providerUrl);
     record("selecting-model");

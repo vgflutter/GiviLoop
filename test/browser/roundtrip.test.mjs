@@ -97,15 +97,17 @@ for (const spec of webCases) {
   });
 }
 
-test('Gemini first-use cookie choice temporarily restores a background window without duplicate submission', { timeout: 30_000 }, async t => {
-  const f = otherFixture(t, webCases[2]);
+for (const spec of [webCases[1], webCases[2]]) test(`${spec.provider} first-use cookie choice restores then minimizes before the sole send`, { timeout: 30_000 }, async t => {
+  const f = otherFixture(t, spec);
+  f.env.GIVILOOP_TEST_CAPTURE_WINDOW_STATE = '1';
   const html=readFileSync(f.env.GIVILOOP_TEST_PAGE,'utf8');
-  writeFileSync(f.env.GIVILOOP_TEST_PAGE,html.replace('</body>', '<div role="dialog" style="position:fixed;inset:0;background:white"><button onclick="this.parentElement.remove()">Rifiuta tutto</button></div></body>'));
-  const sent=await cli(f,'ask',['--send','gemini-web','--question','Review','--mode','auto','--background','--browser-profile',f.profile,'--response-stable-ms','100','--max-wait-ms','5000']);
+  writeFileSync(f.env.GIVILOOP_TEST_PAGE,html.replace('</body>', '<div role="dialog" style="position:fixed;inset:0;background:white"><button data-testid="consent-reject" onclick="this.parentElement.remove()">Rifiuta tutto</button></div></body>'));
+  const sent=await cli(f,'ask',['--send',spec.provider,'--question','Review','--mode','auto','--background','--browser-profile',f.profile,'--response-stable-ms','100','--max-wait-ms','5000']);
   assert.equal(sent.code,0,sent.stderr);
   assert.match(sent.stderr,/initial cookie choice/);
   assert.equal(readFileSync(f.latest().response,'utf8'),answer);
   assert.equal(f.events().filter(e=>e.action==='submit').length,1);
+  assert.equal(f.events().find(e=>e.action==='submit').windowState,'minimized');
 });
 
 test('DeepSeek does not mistake the submitted user markdown and its copy button for an answer', {timeout:30_000},async t=>{
@@ -567,6 +569,20 @@ test('native maximized window can enter background mode and closes cleanly', {ti
     assert.equal((await session.send('Browser.getWindowBounds',{windowId})).bounds.windowState,'maximized');
     await minimizeBrowser(c,p);
     assert.equal((await session.send('Browser.getWindowBounds',{windowId})).bounds.windowState,'minimized');
+    await session.detach();
+  }finally{await c.close();}
+  assert.equal(profileOwnerPid(profile),undefined);
+});
+
+test('native background launch creates its initial page already minimized', {timeout:30000}, async t=>{
+  const f=fixture(t),profile=path.join(f.root,'background-start-profile');
+  const {launchChatBrowser,profileOwnerPid}=await import(pathToFileURL(path.join(distDir,'providers/browser-runtime.js')));
+  const c=await launchChatBrowser(profile,false,true);
+  try {
+    const pages=c.pages();assert.equal(pages.length,1);assert.equal(pages[0].url(),'about:blank');
+    const session=await c.newCDPSession(pages[0]);
+    const {bounds}=await session.send('Browser.getWindowForTarget');
+    assert.equal(bounds.windowState,'minimized','launch must not rely on a later minimize call');
     await session.detach();
   }finally{await c.close();}
   assert.equal(profileOwnerPid(profile),undefined);

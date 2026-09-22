@@ -39,7 +39,7 @@ npm run givi -- ask --repo . --file examples/double-check/sum.ts \
 
 GiviLoop saves the answer and prints its path. The example's `sum([])` should return zero but throws; ask your agent to check the finding before applying the fix. Run `node examples/double-check/verify.mjs` to reproduce this example independently.
 
-**Do not use `--headless` for ChatGPT:** it is currently unsupported in practice; live checks were blocked by site verification both with and without login. Use `--background`, which minimizes Chrome but can show a window at startup or during file uploads or initial website setup. Human verification may still require your action.
+**Do not use `--headless` for ChatGPT:** it is currently unsupported in practice; live checks were blocked by site verification both with and without login. Use `--background`, which starts Chrome with a background, minimized window. File uploads or initial website setup can still temporarily show it. Human verification may still require your action.
 
 **Web access is experimental.** OpenAI's European terms prohibit automatic output extraction; technical success, anonymous access and MIT licensing do not establish permission. [Costs and access](docs/costs-and-access.md).
 

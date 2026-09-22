@@ -324,7 +324,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             background: {
               type: "boolean", default: false,
-              description: "Use standard Chrome in a minimized window; shown at startup or for file uploads. Requires mode=auto and headless=false.",
+              description: "Start standard Chrome in a background, minimized window; setup, verification or file uploads may show it. Requires mode=auto and headless=false.",
             },
             browserProfile: {
               type: "string",
@@ -398,7 +398,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             background: {
               type: "boolean", default: false,
-              description: "Use standard Chrome in a minimized window; shown at startup or for file uploads. Requires mode=auto and headless=false.",
+              description: "Start standard Chrome in a background, minimized window; setup, verification or file uploads may show it. Requires mode=auto and headless=false.",
             },
             browserProfile: {
               type: "string",
@@ -530,7 +530,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             background: {
               type: "boolean", default: false,
-              description: "Use standard Chrome in a minimized window; shown at startup or for file uploads. Requires mode=auto and headless=false.",
+              description: "Start standard Chrome in a background, minimized window; setup, verification or file uploads may show it. Requires mode=auto and headless=false.",
             },
             browserProfile: {
               type: "string",
