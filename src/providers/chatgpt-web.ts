@@ -224,6 +224,9 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
     }
     status.submitted = true;
     checkCancelled();
+    // Some Linux window managers restore a minimized window when Chrome
+    // focuses the composer/send control. Keep generation in the background.
+    if (background) await minimizeBrowser(context, page);
     if (mode === "submit") {
       status.outcome = "submitted";
       status.endedAt = new Date().toISOString();

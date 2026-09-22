@@ -39,6 +39,8 @@ Do not remove `SingletonLock` while Chrome owns the profile, copy active profile
 
 On Linux, a bare Xvfb display does not provide a window manager and can produce `BACKGROUND_UNAVAILABLE`. The browser/package CI uses Xvfb plus Openbox and waits for window management to become available before testing native background sessions. A desktop requirement is separate from the website's access restrictions.
 
+Some Linux window managers restore Chrome when the composer/send control receives focus. GiviLoop checks and minimizes the window again after sending, keeping the response wait in the background; a transient window during that interaction remains possible on those desktops.
+
 On macOS, two real Claude MCP reviews completed with this startup path while monitoring the foreground application: neither GiviLoop-owned Chrome instance became foreground. The test does not independently certify every fullscreen/Spaces arrangement. Setup, human verification and ZIP uploads intentionally restore Chrome when needed; the window is minimized again before the review continues. Normal background startup does not reactivate VS Code or another app on a timer, so it does not pull you away from an app you choose to use during generation.
 
 `--headless --mode auto` does not create a visible window. **It is currently unusable for live ChatGPT reviews:** the release trial received HTTP 403, and the 22 September checks were challenged with both authenticated and anonymous profiles. No prompt was sent. Use `--background`. GiviLoop stops on the block; it does not silently switch modes, hide automation flags, retry rate limits, or bypass an account challenge.

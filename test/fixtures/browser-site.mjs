@@ -14,6 +14,9 @@ async function instrument(context) {
   let providerNavigations = 0;
   await context.exposeFunction("captureSubmission", async value => {
     if (process.env.GIVILOOP_TEST_CAPTURE_WINDOW_STATE) {
+      // Measure while generation is pending, after the input action settles.
+      // X11 window managers can restore Chrome during the send interaction.
+      await new Promise(resolve => setTimeout(resolve, 750));
       const page = context.pages().find(page => page.url().startsWith(process.env.GIVILOOP_TEST_ORIGIN));
       const session = await context.newCDPSession(page);
       try { value.windowState = (await session.send("Browser.getWindowForTarget")).bounds.windowState; }

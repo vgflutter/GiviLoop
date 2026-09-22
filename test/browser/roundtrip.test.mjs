@@ -97,10 +97,10 @@ for (const spec of webCases) {
   });
 }
 
-for (const spec of [webCases[1], webCases[2]]) test(`${spec.provider} first-use cookie choice restores then minimizes before the sole send`, { timeout: 30_000 }, async t => {
+for (const spec of [webCases[1], webCases[2]]) test(`${spec.provider} first-use cookie choice returns to background during generation after one send`, { timeout: 30_000 }, async t => {
   const f = otherFixture(t, spec);
   f.env.GIVILOOP_TEST_CAPTURE_WINDOW_STATE = '1';
-  const html=readFileSync(f.env.GIVILOOP_TEST_PAGE,'utf8');
+  const html=readFileSync(f.env.GIVILOOP_TEST_PAGE,'utf8').replace('},900);','},2200);');
   writeFileSync(f.env.GIVILOOP_TEST_PAGE,html.replace('</body>', '<div role="dialog" style="position:fixed;inset:0;background:white"><button data-testid="consent-reject" onclick="this.parentElement.remove()">Rifiuta tutto</button></div></body>'));
   const sent=await cli(f,'ask',['--send',spec.provider,'--question','Review','--mode','auto','--background','--browser-profile',f.profile,'--response-stable-ms','100','--max-wait-ms','5000']);
   assert.equal(sent.code,0,sent.stderr);
