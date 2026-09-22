@@ -44,6 +44,8 @@ test("doctor inspects an isolated profile without clipboard or browser operation
   assert.equal(result.status, 0, result.stderr);
   const report = JSON.parse(result.stdout);
   assert.equal(report.previousExit, "Crashed");
+  assert.match(report.previousExitNote, /pending session restore/);
+  assert.match(report.nextStep, /Restore or dismiss 'Restore pages\?'/);
   assert.equal(report.profileBusy, false);
   assert.equal(report.profile, profile);
   assert.deepEqual(f.osCalls(), []);

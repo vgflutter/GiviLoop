@@ -55,7 +55,43 @@ for (const headless of [true, false]) test(`${headless ? "headless" : "native he
   } finally { await automated.close(); }
   const preferences = JSON.parse(readFileSync(path.join(profile, "Default", "Preferences"), "utf8"));
   assert.equal(preferences.profile?.exit_type, "Normal", "cooperative browser close must flush a clean shutdown to its fresh profile");
+  const { diagnoseBrowser } = await import(pathToFileURL(path.join(distDir, "browser-commands.js")));
+  const report = diagnoseBrowser(profile);
+  assert.equal(report.previousExit, "Normal");
+  assert.equal(report.previousExitNote, "Chrome recorded a clean shutdown.");
+  assert.match(report.nextStep, /browser check/);
 });
+
+test("a new Chrome window acknowledges an old crash marker and preserves the login store", { timeout: 30_000 }, async t => {
+  const f = fixture(t), profile = path.join(f.root, "old-crash-profile");
+  const { launchChatBrowser } = await import(pathToFileURL(path.join(distDir, "providers/browser-runtime.js")));
+  const { diagnoseBrowser } = await import(pathToFileURL(path.join(distDir, "browser-commands.js")));
+  const seed = await launchChatBrowser(profile, false);
+  try {
+    await seed.addCookies([{ name: "giviloop-test-session", value: "synthetic-session",
+      domain: "example.test", path: "/", secure: true, httpOnly: true, expires: Math.floor(Date.now() / 1000) + 3600 }]);
+  } finally { await seed.close(); }
+  // Reproduce a pending restore only in this isolated synthetic profile.
+  const preferencesPath = path.join(profile, "Default", "Preferences");
+  const preferences = JSON.parse(readFileSync(preferencesPath, "utf8"));
+  preferences.profile.exit_type = "Crashed";
+  writeFileSync(preferencesPath, JSON.stringify(preferences));
+  assert.equal(diagnoseBrowser(profile).previousExit, "Crashed");
+  const recovery = await launchChatBrowser(profile, false);
+  try {
+    const session = await recovery.browser().newBrowserCDPSession();
+    try { await session.send("Target.createTarget", { url: "about:blank", newWindow: true }); }
+    finally { await session.detach(); }
+  } finally { await recovery.close(); }
+  assert.equal(diagnoseBrowser(profile).previousExit, "Normal", "Chrome itself must persist the acknowledged clean shutdown");
+  const next = await launchChatBrowser(profile, false, true);
+  try {
+    const cookies = await next.cookies("https://example.test/");
+    assert.equal(cookies.find(cookie => cookie.name === "giviloop-test-session")?.value, "synthetic-session");
+  } finally { await next.close(); }
+  assert.equal(diagnoseBrowser(profile).previousExit, "Normal", "the next background session must also close cleanly");
+});
+
 function pageFixture({ archive = false, incomplete = false, legacy = false, model = false, missingModel = false, confirmModel = true } = {}) {
   return `<!doctype html><html><head><style>#conversation li div { white-space: pre-wrap; }</style></head><body>
   <textarea style="display:none"></textarea>

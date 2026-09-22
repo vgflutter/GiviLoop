@@ -20,7 +20,11 @@ If login succeeded in regular Chrome but disappeared during automation, update t
 
 ## A blank window or “Restore pages?” prompt
 
-The restore prompt indicates a previous abnormal Chrome shutdown; it does not identify the underlying cause by itself. Chrome can retain the `Crashed` preference through later clean exits, so `givi doctor` reports a saved marker rather than proof that the last run crashed. Check the run's `browser-status.json` to distinguish a busy profile from navigation or provider errors. GiviLoop does not rewrite Chrome preferences to hide this marker.
+The restore prompt indicates a previous abnormal Chrome shutdown; it does not identify the underlying cause by itself. Chrome retains the `Crashed` preference through later clean exits when session recovery remains unacknowledged. Restoring or dismissing the prompt, or opening another window after startup, acknowledges it. This behavior is explicit in [Chromium's session handling](https://chromium.googlesource.com/chromium/src/+/lkgr/chrome/browser/sessions/exit_type_service.cc). `doctor` reports the saved marker and the applicable recovery step; it does not rewrite Chrome preferences.
+
+To clear an old marker, open the **dedicated** profile with `givi browser login`. Restore the old tabs if you need them; otherwise dismiss “Restore pages?” or open a new window (`Cmd+N` on macOS, `Ctrl+N` on Windows/Linux) after Chrome has started. Then quit that Chrome normally (`Cmd+Q` on macOS; Exit from Chrome's menu on Windows/Linux) and run `givi doctor` again. Chrome should now save `previousExit: "Normal"`. This preserves the login profile; simply closing a window with recovery still pending can leave the marker unchanged.
+
+Completed `auto` runs request Chrome's cooperative shutdown and wait for the owned process to exit before returning. Avoid force-quitting it. If `Crashed` returns after recovery, investigate that new shutdown rather than repeatedly clearing the marker; check the run's `browser-status.json` for provider errors and the OS crash reports for a browser crash.
 
 1. Close the dedicated GiviLoop Chrome window normally. Do not kill every Chrome process.
 2. Run `givi doctor` again. Wait for `profileBusy: false` before sending.

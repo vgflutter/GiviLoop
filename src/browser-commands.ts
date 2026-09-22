@@ -14,16 +14,28 @@ export function diagnoseBrowser(profile = browserProfilePath()) {
     exitType = typeof preferences.profile?.exit_type === "string" ? preferences.profile.exit_type : undefined;
   } catch { /* New or unavailable profiles have no saved shutdown state. */ }
   const ownerPid = profileOwnerPid(resolved);
+  const profileExists = existsSync(resolved);
+  const profileBusy = ownerPid !== undefined;
+  const previousExitNote = profileBusy
+    ? "Chrome marks active sessions as Crashed; wait for this profile to close before interpreting its saved marker."
+    : exitType === "Crashed"
+      ? "Saved Chrome crash marker. It can persist after clean exits until the pending session restore is acknowledged; it does not prove the last run crashed."
+      : exitType === "Normal" ? "Chrome recorded a clean shutdown."
+        : exitType === "SessionEnded" ? "Chrome recorded a session ended by the operating system."
+          : "No recognized Chrome shutdown marker is available.";
   return {
     node: process.version, platform: `${process.platform}/${os.arch()}`,
     chromeExecutable: chromeExecutable() ?? null,
-    profile: resolved, profileExists: existsSync(resolved),
-    ownerPid: ownerPid ?? null, profileBusy: ownerPid !== undefined,
-    previousExit: ownerPid ? "unknown (profile is currently open)" : exitType ?? "unknown",
-    previousExitNote: "Saved Chrome preference; an earlier crash marker can persist after later clean exits. This field alone does not diagnose the last run.",
+    profile: resolved, profileExists,
+    ownerPid: ownerPid ?? null, profileBusy,
+    previousExit: profileBusy ? "unknown (profile is currently open)" : exitType ?? "unknown",
+    previousExitNote,
     authentication: "unknown (doctor does not inspect cookies or open the website)",
-    nextStep: ownerPid ? "Close the dedicated Chrome window before sending."
-      : "Use givi browser login for initial sign-in, close Chrome, then send the review.",
+    nextStep: profileBusy ? "Quit the dedicated Chrome instance before sending."
+      : exitType === "Crashed"
+        ? "Use givi browser login with this profile. Restore or dismiss 'Restore pages?', or open a new window after startup, then quit that Chrome normally and run givi doctor again."
+        : profileExists ? "Use givi browser check with this profile to verify website access without sending a prompt."
+          : "Use givi browser login for initial sign-in, quit that Chrome, then send the review.",
   };
 }
 
