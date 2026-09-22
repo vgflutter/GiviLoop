@@ -62,3 +62,7 @@ If you want verification tests added or executed, include that in your instructi
 ## What a dedicated feature would add
 
 The proposed native Double Check feature would bind each finding to a source snapshot, store its evidence and outcome, and distinguish successful verification from a timeout, missing context or unavailable verifier. A later recheck could update only findings affected by a patch. See the [prioritized roadmap](roadmap.md); these capabilities are not shipped yet.
+
+## Keep the verification result
+
+After independently checking each claim, save it with `givi_record_finding` (or `givi findings`). Include source/contract/test files, the confirmed/dismissed/unverified status, a reason and actual evidence. `givi_list_findings` reports changes that make an assessment stale. `givi_prepare_recheck` prepares current context for one finding; sending and verifying are explicit next steps. GiviLoop records the host agent's assessment, not a machine-certified result. [Commands and examples](setup-and-evidence.md).

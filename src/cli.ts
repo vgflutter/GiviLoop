@@ -19,6 +19,7 @@ import path from "node:path";
 import { checkBrowserAccess, diagnoseBrowser, openLoginBrowser } from "./browser-commands.js";
 import { pruneCompletedRuns, RUN_ID_PATTERN } from "./run-storage.js";
 import { VERSION } from "./version.js";
+import { setupCommand, findingsCommand, recheckCommand } from "./workflow-commands.js";
 import { probeLocalProvider, readLocalProvider, readLocalReasoning, sendLocalReview } from "./providers/local-review.js";
 import {
   sendToWebChat,
@@ -98,6 +99,7 @@ type SourceArchiveManifest = {
 };
 
 type Command =
+  | "setup" | "findings" | "recheck"
   | "prepare"
   | "ask"
   | "archive"
@@ -117,6 +119,9 @@ async function main(): Promise<void> {
     if (args.includes("--help") || args.includes("-h")) { printHelp(); return; }
     if (args[0] === "--version") { console.log(VERSION); return; }
     switch (command) {
+      case "setup": await setupCommand(args.slice(1)); break;
+      case "findings": findingsCommand(args.slice(1)); break;
+      case "recheck": recheckCommand(args.slice(1)); break;
       case "prepare":
         prepare(args.slice(1));
         break;
@@ -1955,6 +1960,13 @@ Chat quotas and provider terms still apply; total token savings are not measured
 The browser adapter is experimental. See docs/costs-and-access.md.
 
 Commands:
+  setup     Guided prerequisites, provider/login, MCP snippet and opt-in public demo.
+            --provider NAME --non-interactive [--login|--check|--demo] [--model NAME]
+  findings  add --title TEXT --claim TEXT [--file PATH] (repeat --file for contracts/tests)
+            update --id ID --status confirmed|dismissed|unverified --reason TEXT --evidence TEXT
+            list [--json]; all accept --repo PATH and --run-id ID.
+            Confirmed/dismissed require source files, reason and evidence; tests are not executed.
+  recheck   --finding-id ID [--run-id ID] [--file PATH]: prepare current context, no sending.
   prepare   Create a review package from local git diff and untracked files.
   ask       Create an advisory request, optionally attaching local files with --file.
   archive   Create a source-context zip and manifest, optionally sending them to ChatGPT web.

@@ -70,6 +70,24 @@ async function connect(t, f) {
   return client;
 }
 
+test('setup discovers local models without inference, then sends only its opt-in public demo', async t => {
+  const f = fixture(t), server = await localServer(t, 'ollama');
+  writeFileSync(path.join(f.repo, 'private.txt'), 'PRIVATE_CONTEXT_MUST_NOT_LEAVE');
+  const checked = await cli(f, 'setup', ['--provider', 'ollama', '--base-url', server.url, '--non-interactive', '--check']);
+  assert.equal(checked.code, 0, checked.stderr);
+  assert.deepEqual(JSON.parse(checked.stdout).access.models, [modelFor('ollama')]);
+  assert.equal(server.calls.filter(c => c.path === '/api/chat').length, 0);
+  const demo = await cli(f, 'setup', ['--provider', 'ollama', '--base-url', server.url, '--model', modelFor('ollama'), '--non-interactive', '--demo']);
+  assert.equal(demo.code, 0, demo.stderr);
+  const report = JSON.parse(demo.stdout);
+  assert.equal(report.demo.submitted, true);
+  const calls = server.calls.filter(c => c.path === '/api/chat');
+  assert.equal(calls.length, 1);
+  assert.match(JSON.stringify(calls[0].body), /values.reduce/);
+  assert.doesNotMatch(JSON.stringify(calls[0].body), /PRIVATE_CONTEXT/);
+  assert.deepEqual(f.osCalls(), []);
+});
+
 for (const provider of ["ollama", "dwarfstar", "llama-cpp", "lmstudio", "mlx"]) {
   test(`${provider}: CLI local ask -> saved final answer/usage -> MCP read, no browser or clipboard`, async t => {
     const f = fixture(t), server = await localServer(t, provider);

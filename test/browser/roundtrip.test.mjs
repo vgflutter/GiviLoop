@@ -311,6 +311,52 @@ test("browser check inspects a usable composer without creating or sending a rev
   assert.equal(existsSync(path.join(f.repo, ".giviloop/latest-run-id")), false);
 });
 
+test('setup browser check uses the explicit isolated profile and does not submit', { timeout: 30000 }, async t => {
+  const f = setup(t);
+  const result = await cli(f, 'setup', ['--non-interactive', '--check', '--browser-profile', f.profile]);
+  assert.equal(result.code, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.access.ready, true);
+  assert.equal(report.access.submitted, false);
+  assert.equal(f.events().filter(e => e.action === 'submit').length, 0);
+  assert.ok(f.events().filter(e => e.action === 'launch').every(e => e.profile === f.profile));
+});
+
+test('failed setup access check never proceeds to an explicitly requested demo', { timeout: 30000 }, async t => {
+  const f = setup(t);
+  f.env.GIVILOOP_TEST_HTTP_STATUS = '403'; f.env.GIVILOOP_TEST_CHALLENGE = 'true';
+  const result = await cli(f, 'setup', ['--non-interactive', '--check', '--demo', '--browser-profile', f.profile]);
+  assert.equal(result.code, 1, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.access.ready, false);
+  assert.equal(report.demo.submitted, false);
+  assert.equal(f.events().filter(e => e.action === 'submit').length, 0);
+  assert.equal(existsSync(path.join(f.repo, '.giviloop/setup-demos')), false);
+});
+
+test('evidence recheck sends the new snapshot through MCP and preserves parent review', { timeout: 30000 }, async t => {
+  const f = setup(t);
+  writeFileSync(path.join(f.repo, 'code.ts'), 'export const value = 1;');
+  const first = await cli(f, 'ask', ['--file', 'code.ts', '--question', 'Review', '--send', 'chatgpt-web', '--mode', 'auto', '--headless', '--browser-profile', f.profile, '--response-stable-ms', '100']);
+  assert.equal(first.code, 0, first.stderr);
+  const parent = f.latest();
+  const added = await cli(f, 'findings', ['add', '--title', 'Value', '--claim', 'Value must be 2', '--file', 'code.ts']);
+  assert.equal(added.code, 0, added.stderr);
+  writeFileSync(path.join(f.repo, 'code.ts'), 'export const value = 2;');
+  const prepared = await cli(f, 'recheck', ['--run-id', parent.id, '--finding-id', JSON.parse(added.stdout).findingId]);
+  assert.equal(prepared.code, 0, prepared.stderr);
+  const current = f.latest();
+  const client = await connect(t, f);
+  const sent = await client.callTool({ name: 'givi_send_to_web_llm', arguments: { repositoryPath: f.repo, runId: current.id, mode: 'auto', headless: true, browserProfile: f.profile, responseStableMs: 100, maxWaitMs: 5000 } });
+  assert.notEqual(sent.isError, true, JSON.stringify(sent));
+  assert.equal(readFileSync(parent.response, 'utf8'), answer);
+  assert.equal(readFileSync(current.response, 'utf8'), answer);
+  const submissions = f.events().filter(e => e.action === 'submit');
+  assert.equal(submissions.length, 2);
+  assert.match(submissions[1].prompt, /value = 2/);
+  assert.match(submissions[1].prompt, /Targeted recheck/);
+});
+
 test("anonymous chat with a login button supports check, CLI auto send and saved response", { timeout: 30_000 }, async t => {
   const f = setup(t, { anonymous: true });
   const probe = await cli(f, "browser", ["check", "--browser-profile", f.profile]);

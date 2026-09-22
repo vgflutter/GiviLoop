@@ -11,7 +11,7 @@ From a checkout, run `npm ci` and `npm run build`. Examples below use `npm run g
 To install a locally built archive:
 
 ```sh
-npm install -g /path/to/giviloop-0.4.0.tgz
+npm install -g /path/to/giviloop-0.5.0.tgz
 ```
 
 The package exposes `givi` and `givi-mcp`. Node.js 20+ is required; use Git for diff/archive flows, `zip` for archives, and a separately installed runtime with compatible weights for local inference. Clipboard flows use macOS/Windows system utilities, or `wl-clipboard`/`xclip` on Linux. Google Chrome is only needed for web automation.
@@ -202,7 +202,7 @@ GiviLoop commands share one run model under `.giviloop/runs/<run-id>/`.
 - `send` sends a prepared run to a selected local runtime or browser chat. Use `--run-id` to select a particular request. Only the ChatGPT web path accepts source archives; it automatically attaches `source-context.zip`.
 - `copy` and `ingest` are the manual fallback pair. Use them for Claude today, provider UI issues, or cases where you want to paste and review before sending.
 
-Browser destinations are `chatgpt-web`, `deepseek-web`, `claude-web` and `gemini-web`, each with its own default profile. A prepared run must match its destination (`--target-provider NAME-chat`); `ask --send NAME-web` infers the target. New adapters accept inline text, with ZIP uploads and automatic model selection limited to ChatGPT. DeepSeek/Claude authenticated generation is not yet live-validated. See [provider commands and validation](web-providers.md).
+Browser destinations are `chatgpt-web`, `deepseek-web`, `claude-web` and `gemini-web`, each with its own default profile. A prepared run must match its destination (`--target-provider NAME-chat`); `ask --send NAME-web` infers the target. New adapters accept inline text, with ZIP uploads and automatic model selection limited to ChatGPT. Signed-in Claude Free/DeepSeek and anonymous Gemini generation have been exercised; DeepSeek failed the corrected-code quality control. These are a few disclosed cases, not a model ranking. See [provider commands and validation](web-providers.md).
 
 ## Output Files
 
@@ -221,7 +221,7 @@ Source-archive runs also include source-context.zip and source-manifest.json. Wi
 
 The latest run id is stored in .giviloop/latest-run-id.
 
-At each new run, GiviLoop keeps the 10 most recent completed, inactive runs and prunes older completed runs. Pending runs and active browser jobs are preserved.
+During normal run cleanup, GiviLoop keeps the 10 most recent completed, inactive runs and prunes older completed runs. Pending runs, active browser jobs and runs with a `findings.json` evidence ledger are preserved. Remove evidence-bearing runs deliberately when no longer needed.
 
 Local runs contain `local-status.json` and `local-usage.json`. A shared `review.lock` prevents browser and local transports from writing the same run simultaneously. Interrupting CLI inference or cancelling an MCP request releases the lock; after a force-killed process, remove a stale lock only after verifying its recorded PID has stopped.
 
@@ -294,3 +294,7 @@ Before sending code or context to an external provider, make sure that doing so 
 Optional hardening: set `GIVILOOP_ALLOWED_REPOSITORIES` to a path-delimited list of repository roots that may be sent through web LLM automation.
 
 You are responsible for deciding what can be shared externally. GiviLoop helps package and transmit content; it does not decide whether that transfer is permitted.
+
+## Guided setup and finding evidence
+
+Use `givi setup` for prerequisites, provider choices and an MCP snippet. `givi findings add|update|list` records assessments and evidence; `givi recheck` prepares fresh context for one finding. MCP exposes `givi_record_finding`, `givi_list_findings` and `givi_prepare_recheck`. See the [complete setup and evidence guide](setup-and-evidence.md) for commands and limitations.

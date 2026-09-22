@@ -17,6 +17,8 @@ import {
 import path from "node:path";
 import { pruneCompletedRuns, RUN_ID_PATTERN } from "./run-storage.js";
 import { VERSION } from "./version.js";
+import { evidenceTools } from "./workflow-commands.js";
+import { recordFinding, readFindings, prepareRecheck } from "./review-evidence.js";
 import { probeLocalProvider, readLocalProvider, readLocalReasoning, sendLocalReview, type LocalRunOptions } from "./providers/local-review.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -161,6 +163,7 @@ const server = new Server(
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
+      ...evidenceTools,
       {
         name: TOOL_ASK_LOCAL,
         description: "Ask a model running in Ollama, DwarfStar, llama.cpp, LM Studio or MLX to review a question and selected files. Fully automatic, no browser or cloud fallback. Saves a run, response, timing and token usage. Default response handling is analyze-only.",
@@ -579,6 +582,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   const toolName = request.params.name;
 
+  if (evidenceTools.some(tool => tool.name === toolName)) {
+    const input = readObject(request.params.arguments);
+    const repositoryPath = readRequiredString(input, "repositoryPath");
+    const runId = readOptionalRunId(input, "runId");
+    const result = toolName === "givi_list_findings" ? readFindings(repositoryPath, runId)
+      : toolName === "givi_prepare_recheck" ? prepareRecheck(repositoryPath, runId, readRequiredString(input, "findingId"), readOptionalStringArray(input, "files"))
+      : recordFinding({ repositoryPath, runId, id: readOptionalString(input, "id"), title: readOptionalString(input, "title"), claim: readOptionalString(input, "claim"), status: readOptionalString(input, "status"), reason: readOptionalString(input, "reason"), evidence: readOptionalStringArray(input, "evidence"), files: readOptionalStringArray(input, "files") });
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  }
+
   if (toolName === TOOL_LOCAL_MODELS) {
     const input = readObject(request.params.arguments);
     const result = await probeLocalProvider(readLocalProvider(readRequiredString(input, "provider")), readOptionalString(input, "baseUrl"));
@@ -758,6 +771,9 @@ function buildHelpToolResponse(): {
           "- Local reasoning/context/output options are explicit. Completed runs save local-status.json and local-usage.json.",
           "",
           "Recommended IDE-agent flows:",
+          "- Onboarding: run givi setup in a terminal for prerequisites, provider/login, an MCP snippet and an optional public demo.",
+          "- Evidence: after independent checks, use givi_record_finding with source/contract/test files, status, reason and evidence. Use givi_list_findings to see stale decisions. These tools record your assessment, not certified test results.",
+          "- Recheck: givi_prepare_recheck creates a new request for one finding with current files; inspect and explicitly send its returned runId, then verify again.",
           "",
           "1. Double Check current Git changes",
           "- Prepare with givi_prepare_from_git, then givi_send_to_web_llm with mode=auto, background=true and the same runId.",
@@ -1151,6 +1167,7 @@ function buildWebLlmToolResponse(result: {
           result.responsePath ? `Response: ${result.responsePath}` : undefined,
           "",
           buildExternalReviewHandlingInstructions(result.reviewResponseMode),
+          "After independent verification, use givi_record_finding to preserve each claim, source references, reason and evidence. Use givi_list_findings to inspect stale assessments, or givi_prepare_recheck for current context. These tools record your assessment; they do not execute tests.",
           result.responseText
             ? ["", formatUntrustedExternalReview(result.responseText)].join("\n")
             : undefined,

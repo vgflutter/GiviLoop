@@ -13,9 +13,9 @@ CLI + MCP · Web chat + local models · Open source · MIT
 
 ## See it work
 
-[![Watch a real Double Check run](https://raw.githubusercontent.com/vgflutter/GiviLoop/main/docs/media/double-check-preview.png)](https://github.com/vgflutter/GiviLoop/releases/download/v0.3.1/giviloop-double-check.mp4)
+[![Watch setup, review and evidence](https://raw.githubusercontent.com/vgflutter/GiviLoop/main/docs/media/double-check-preview.png)](https://github.com/vgflutter/GiviLoop/releases/download/v0.5.0/giviloop-double-check.mp4)
 
-[Watch the demo (MP4)](https://github.com/vgflutter/GiviLoop/releases/download/v0.3.1/giviloop-double-check.mp4): a real CLI review, MCP handoff and an independent check of the proposed fix. Recorded with 0.3.1, a deliberately buggy example and an authenticated session. [Recording details](docs/demo.md).
+[Watch the demo (MP4)](https://github.com/vgflutter/GiviLoop/releases/download/v0.5.0/giviloop-double-check.mp4): guided setup, a live Claude review, a confirmed bug, an explicitly author-supplied false claim dismissed, and a recheck after an edit. Recorded with 0.5.0 on a public synthetic example. [Recording details](docs/demo.md).
 
 ## Try a first review
 
@@ -26,10 +26,12 @@ git clone https://github.com/vgflutter/GiviLoop.git
 cd GiviLoop
 npm ci
 npm run build
-npm run givi -- browser check
+npm run givi -- setup
 ```
 
-**With or without login:** GiviLoop can use ChatGPT anonymously when the website offers a usable chat. If login is required, run `npm run givi -- browser login`, sign in, quit that dedicated Chrome, then repeat the check. Availability and limits are controlled by the website.
+Setup checks prerequisites, lets you choose a reviewer and writes an MCP entry to `.giviloop/mcp.json` for you to merge into your client. Login, access checks and the bundled public demo are opt-in; editor settings are untouched. It does not set a default provider for subsequent commands. [Setup and evidence guide](docs/setup-and-evidence.md).
+
+**With or without login:** GiviLoop can use ChatGPT anonymously when the website offers a usable chat. If login is required, run `npm run givi -- browser login`, sign in, quit that dedicated Chrome, then run `npm run givi -- browser check`. Availability and limits are controlled by the website.
 
 ```sh
 npm run givi -- ask --repo . --file examples/double-check/sum.ts \
@@ -83,12 +85,14 @@ and tests; report confirmed, dismissed or unverified, with reasons.
 Do not edit files.
 ```
 
-The coding agent performs the verification. GiviLoop handles context and review transfer; it does not run tests or apply fixes itself. [Full Double Check recipe](docs/double-check.md).
+The coding agent performs the verification. Ask it to **save findings with `givi_record_finding`**, including source/contract/test files, a reason and evidence. `givi_list_findings` reports confirmed, dismissed or unverified, with decision history; changed referenced files make the assessment stale. `givi_prepare_recheck` prepares a new request for one finding with current source, without sending it or applying fixes. [CLI equivalents and examples](docs/setup-and-evidence.md).
+
+GiviLoop records the agent's assessment; it does not execute or certify tests. An empty finding list is not proof of clean code. [Full Double Check recipe](docs/double-check.md).
 
 ## Install, learn, contribute
 
 - [Latest release and installable package](https://github.com/vgflutter/GiviLoop/releases/latest) · [CLI/MCP reference](docs/usage.md)
-- [Current provider results](docs/web-providers.md) · [Troubleshooting](docs/troubleshooting.md) · [0.4.0 scope and limits](docs/releases/0.4.0.md)
+- [Current provider results](docs/web-providers.md) · [Troubleshooting](docs/troubleshooting.md) · [0.5.0 scope and limits](docs/releases/0.5.0.md)
 - [Report a bug or a Double Check experience](https://github.com/vgflutter/GiviLoop/issues/new/choose) · [Contributing](CONTRIBUTING.md) · [Roadmap](docs/roadmap.md)
 
 Add `.giviloop/` to the reviewed repository's `.gitignore`: run files can contain source and prompts. Redaction is best effort. [Data handling](docs/usage.md#safety-and-legal).
