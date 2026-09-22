@@ -90,6 +90,8 @@ Il controllo finale del pacchetto installato è passato: **145 test unitari, 21 
 
 Le prove automatiche coprono CLI/MCP, preparazione Git e archivi, associazione richiesta/risposta, trasferimento manuale con clipboard simulata, limiti del contesto, redazione dei segreti, percorsi/symlink, adapter HTTP locali, reasoning e output incompleti, cancellazione, profili occupati, chiusura Chrome, challenge ripetute e selezione del modello. I nuovi casi browser verificano chat anonima con pulsante login, login wall, campi media incompatibili e invio singolo dopo upload confermato. La simulazione del sito non certifica l'accesso al servizio reale.
 
+La prima CI con i nuovi test background ha rilevato un requisito dell'ambiente Linux: Xvfb da solo non gestisce la minimizzazione delle finestre. Due casi sono falliti con `BACKGROUND_UNAVAILABLE`. Il workflow ora installa Openbox e verifica che il gestore finestre sia pronto; i test e i controlli di minimizzazione restano attivi.
+
 ```sh
 npm run test:package -- --browser
 node scripts/live-e2e.mjs --web --output .giviloop/diagnostics/my-authenticated-test
