@@ -102,3 +102,9 @@ Use `givi_record_finding` with `repositoryPath`, `runId`, `title`, `claim`, `fil
 Suggested instruction:
 
 > Read the review in analyze-only mode. Verify each concrete finding against source and tests. Record it with givi_record_finding as confirmed, dismissed or unverified, including relevant files, the reason and actual evidence. Do not edit code. Return givi_list_findings and flag anything stale.
+
+## Finish with a portable report
+
+Use `givi report` (or `givi_export_report` from MCP) after recording your assessments. The run's `double-check.md` contains effective verdicts, evidence and hashes, and flags stale or unassessed findings. Exports are snapshots: regenerate after edits. Raw code, prompts and complete answers are omitted; inspect evidence before sharing. Exported runs survive automatic retention cleanup.
+
+For onboarding, `givi demo --offline` demonstrates the workflow without an account, and `givi demo` uses your saved reviewer. The fixed bundled reproduction is executed only for this public demo. See the [demo and before-commit recipe](before-commit.md). The older `setup --demo` remains a preparation/delivery shortcut; use the standalone `demo` for the complete reproduction/report experience.

@@ -26,19 +26,21 @@ git clone https://github.com/vgflutter/GiviLoop.git
 cd GiviLoop
 npm ci
 npm run build
-npm run givi -- setup
+npm run givi -- demo --offline
 ```
 
-Setup checks prerequisites, lets you choose a reviewer and writes an MCP entry to `.giviloop/mcp.json` for you to merge into your client. Login, access checks and the bundled public demo are opt-in; editor settings are untouched. It saves your reviewer and browser preferences for this project. [Setup and evidence guide](docs/setup-and-evidence.md).
+**See the workflow without an account:** the offline demo uses a clearly labeled authored answer, reproduces a known bug and saves a Markdown report. It sends nothing and keeps your project unchanged. It demonstrates the workflow, not model accuracy.
 
-**With or without login:** GiviLoop can use ChatGPT anonymously when the website offers a usable chat. If login is required, run `npm run givi -- browser login`, sign in, quit that dedicated Chrome, then run `npm run givi -- browser check`. Availability and limits are controlled by the website.
+**Then try a real reviewer:**
 
 ```sh
-npm run givi -- review --file examples/double-check/sum.ts \
-  --question "Find a concrete bug, the smallest fix and regression tests."
+npm run givi -- setup --provider claude-web --non-interactive
+npm run givi -- demo
 ```
 
-GiviLoop saves the answer and prints its path. The example's `sum([])` should return zero but throws; ask your agent to check the finding before applying the fix. Run `node examples/double-check/verify.mjs` to reproduce this example independently.
+Setup saves your choice and generates `.giviloop/mcp.json` for your MCP client; editor settings are untouched. The live demo sends only the bundled public example, saves the actual answer and runs its independent reproduction. If login is needed, it prints the next commands; finish with `npm run givi -- demo --finish` after resuming. [First use and commands](docs/before-commit.md).
+
+ChatGPT can also work without login when its website offers a usable chat. Use `--provider chatgpt-web` to choose it; availability and limits remain controlled by the site.
 
 **Do not use `--headless` for ChatGPT:** it is currently unsupported in practice; live checks were blocked by site verification both with and without login. Reviews now start minimized by default. Login, cookie choices, verification or uploads pause with **needs-attention** instead of deliberately showing Chrome. Use `status`, then `open` and `resume` when convenient; ZIP uploads require `resume --foreground`. OS-specific flashes remain possible.
 
@@ -94,14 +96,16 @@ and tests; report confirmed, dismissed or unverified, with reasons.
 Do not edit files.
 ```
 
-The coding agent performs the verification. Ask it to **save findings with `givi_record_finding`**, including source/contract/test files, a reason and evidence. `givi_list_findings` reports confirmed, dismissed or unverified, with decision history; changed referenced files make the assessment stale. `givi_prepare_recheck` prepares a new request for one finding with current source, without sending it or applying fixes. [CLI equivalents and examples](docs/setup-and-evidence.md).
+Use the [ready-to-paste **before-commit recipe**](docs/before-commit.md#use-it-on-your-next-real-change) for your next change. The coding agent performs the verification. Ask it to **save findings with `givi_record_finding`**, including source/contract/test files, a reason and evidence. `givi_list_findings` reports confirmed, dismissed or unverified, with decision history; changed referenced files make the assessment stale. `givi_prepare_recheck` prepares a new request for one finding with current source, without sending it or applying fixes. [CLI equivalents and examples](docs/setup-and-evidence.md).
 
-GiviLoop records the agent's assessment; it does not execute or certify tests. An empty finding list is not proof of clean code. [Full Double Check recipe](docs/double-check.md).
+Finish with **`givi_export_report`** or **`givi report`**: a local Markdown report with confirmed findings, dismissed advice, uncertainties and recorded evidence, ready to inspect before attaching to a PR. GiviLoop records the agent's assessment; the exporter does not execute or certify tests. An empty finding list is not proof of clean code. [Full Double Check recipe](docs/double-check.md).
+
+See a [real report from developing GiviLoop](docs/examples/double-check-report.md): one corrupted-ledger bug independently reproduced and fixed, and one CLI error-handling claim dismissed after testing.
 
 ## Install, learn, contribute
 
 - [Latest release and installable package](https://github.com/vgflutter/GiviLoop/releases/latest) · [CLI/MCP reference](docs/usage.md)
-- [Current provider results](docs/web-providers.md) · [Troubleshooting](docs/troubleshooting.md) · [0.6.0 changes and limits](docs/releases/0.6.0.md)
+- [Current provider results](docs/web-providers.md) · [Troubleshooting](docs/troubleshooting.md) · [0.7.0 changes and limits](docs/releases/0.7.0.md)
 - [Report a bug or a Double Check experience](https://github.com/vgflutter/GiviLoop/issues/new/choose) · [Contributing](CONTRIBUTING.md) · [Roadmap](docs/roadmap.md)
 
 Add `.giviloop/` to the reviewed repository's `.gitignore`: run files can contain source and prompts. Redaction is best effort. [Data handling](docs/usage.md#safety-and-legal).

@@ -19,7 +19,7 @@ import path from "node:path";
 import { checkBrowserAccess, diagnoseBrowser, openLoginBrowser } from "./browser-commands.js";
 import { pruneCompletedRuns, RUN_ID_PATTERN } from "./run-storage.js";
 import { VERSION } from "./version.js";
-import { setupCommand, findingsCommand, recheckCommand } from "./workflow-commands.js";
+import { setupCommand, findingsCommand, recheckCommand, demoCommand, reportCommand } from "./workflow-commands.js";
 import { configuredCliArgs } from "./cli-preferences.js";
 import { runStatus, cancelRun, openRun, resumeRun } from "./run-status.js";
 import { probeLocalProvider, readLocalProvider, readLocalReasoning, sendLocalReview } from "./providers/local-review.js";
@@ -101,6 +101,7 @@ type SourceArchiveManifest = {
 };
 
 type Command =
+  | "demo" | "report"
   | "review" | "status" | "open" | "resume" | "cancel"
   | "setup" | "findings" | "recheck"
   | "prepare"
@@ -149,6 +150,8 @@ async function main(): Promise<void> {
         } else console.log(JSON.stringify(report, null, 2));
         break;
       }
+      case "demo": await demoCommand(args.slice(1)); break;
+      case "report": reportCommand(args.slice(1)); break;
       case "setup": await setupCommand(args.slice(1)); break;
       case "findings": findingsCommand(args.slice(1)); break;
       case "recheck": recheckCommand(args.slice(1)); break;
@@ -1996,6 +1999,11 @@ Chat quotas and provider terms still apply; total token savings are not measured
 The browser adapter is experimental. See docs/costs-and-access.md.
 
 Commands:
+  demo      Try a bundled public bug, independent reproduction and Markdown report.
+            Uses saved reviewer; --provider NAME overrides. --offline needs no account.
+            --finish completes the latest demo after manual login/resume; sends nothing.
+  report    Export findings/evidence to the selected run's double-check.md.
+            --stdout prints without saving; --json returns metadata and Markdown.
   setup     Guided prerequisites, provider/login, MCP snippet and opt-in public demo.
             --provider NAME --non-interactive [--login|--check|--demo] [--model NAME]
             Saves project defaults. --background (default) or --foreground.

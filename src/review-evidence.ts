@@ -65,6 +65,7 @@ function ledger(run: ReturnType<typeof selected>): Ledger {
   if (lstatSync(run.file).size > 5_000_000) throw new Error("Finding ledger exceeds 5 MB. Export it and create a new review run.");
   const saved = JSON.parse(readFileSync(run.file, "utf8")) as Ledger;
   if (saved.schemaVersion !== 1 || saved.runId !== run.id || !Array.isArray(saved.findings)) throw new Error("Invalid finding ledger.");
+  if (!saved.findings.every(f => f && Array.isArray(f.history) && f.history.length > 0 && f.history.every(d => d && (FINDING_STATUSES as readonly string[]).includes(d.status)))) throw new Error("Invalid finding ledger: unknown verdict or missing decision history. Inspect the saved ledger before exporting or recording more findings.");
   return saved;
 }
 function sourceSnapshot(repository: string, files: string[], allowMissing: boolean): Snapshot[] {

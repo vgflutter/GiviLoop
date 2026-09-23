@@ -19,6 +19,7 @@ import { pruneCompletedRuns, RUN_ID_PATTERN } from "./run-storage.js";
 import { VERSION } from "./version.js";
 import { evidenceTools } from "./workflow-commands.js";
 import { recordFinding, readFindings, prepareRecheck } from "./review-evidence.js";
+import { exportReviewReport } from "./review-report.js";
 import { webDefaults, readPreferences } from "./preferences.js";
 import { runStatus, cancelRun, openRun, resumeRun } from "./run-status.js";
 import { browserSessions } from "./providers/browser-sessions.js";
@@ -600,7 +601,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const input = readObject(request.params.arguments);
     const repositoryPath = readRequiredString(input, "repositoryPath");
     const runId = readOptionalRunId(input, "runId");
-    const result = toolName === "givi_list_findings" ? readFindings(repositoryPath, runId)
+    const result = toolName === "givi_export_report" ? exportReviewReport(repositoryPath, runId)
+      : toolName === "givi_list_findings" ? readFindings(repositoryPath, runId)
       : toolName === "givi_prepare_recheck" ? prepareRecheck(repositoryPath, runId, readRequiredString(input, "findingId"), readOptionalStringArray(input, "files"))
       : recordFinding({ repositoryPath, runId, id: readOptionalString(input, "id"), title: readOptionalString(input, "title"), claim: readOptionalString(input, "claim"), status: readOptionalString(input, "status"), reason: readOptionalString(input, "reason"), evidence: readOptionalStringArray(input, "evidence"), files: readOptionalStringArray(input, "files") });
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
@@ -794,6 +796,8 @@ function buildHelpToolResponse(): {
           "- Healthy background sessions are reused within this MCP process, with separate chats, up to two profiles and 60 seconds idle. givi_release_browser_sessions closes idle sessions before manual login; disconnect closes them too.",
           "- Evidence: after independent checks, use givi_record_finding with source/contract/test files, status, reason and evidence. Use givi_list_findings to see stale decisions. These tools record your assessment, not certified test results.",
           "- Recheck: givi_prepare_recheck creates a new request for one finding with current files; inspect and explicitly send its returned runId, then verify again.",
+          "- Before commit: prepare current Git changes, include relevant contracts/tests, send once to the chosen provider, verify each finding independently, record it, then givi_export_report. Do not commit, apply fixes or publish the report unless requested. An empty finding list is not a clean-code verdict.",
+          "- First use: givi demo runs a public example and its bundled deterministic verifier; --offline is an explicitly authored illustration without a provider. Never execute code from a model response as part of a demo.",
           "",
           "1. Double Check current Git changes",
           "- Prepare with givi_prepare_from_git, then givi_send_to_web_llm with mode=auto, background=true and the same runId.",

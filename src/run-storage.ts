@@ -16,7 +16,7 @@ export function pruneCompletedRuns(repositoryPath: string, keep: number): void {
       if (existsSync(path.join(dir, "review.lock"))) return false;
       // Evidence and recheck lineage must survive the automatic ten-run cleanup.
       // Users can remove these deliberately after exporting their assessments.
-      if (existsSync(path.join(dir, "findings.json"))) return false;
+      if (existsSync(path.join(dir, "findings.json")) || existsSync(path.join(dir, "double-check.md"))) return false;
       if (!existsSync(path.join(dir, "external-review-response.md"))) return false;
       for (const statusFile of ["browser-status.json", "local-status.json"]) {
         const statusPath = path.join(dir, statusFile);

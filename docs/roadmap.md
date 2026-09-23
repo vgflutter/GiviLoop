@@ -1,6 +1,6 @@
 # Product direction
 
-Updated for 0.6.0, 23 September 2026. **Now implemented:** quiet browser defaults, saved project preferences, one-command `review`, status/open/resume/cancel, bounded MCP browser reuse, guided setup, structured finding decisions with evidence/history and file hashes, stale detection, and preparation of a targeted recheck linked to its parent. The host agent still verifies findings; GiviLoop does not execute/certify tests or automatically mark fixes resolved. [Current commands](setup-and-evidence.md). Remaining proposals below are not release commitments.
+Updated for 0.7.0, 23 September 2026. **Now implemented:** offline/live public demo with fixed reproduction, portable Markdown reports and a before-commit recipe, quiet browser defaults, saved project preferences, one-command `review`, status/open/resume/cancel, bounded MCP browser reuse, guided setup, structured finding decisions with evidence/history and file hashes, stale detection, and preparation of a targeted recheck linked to its parent. The host agent still verifies findings; GiviLoop does not execute/certify tests or automatically mark fixes resolved. [Current commands](setup-and-evidence.md). Remaining proposals below are not release commitments.
 
 ## Focus
 
@@ -18,7 +18,7 @@ The review-to-agent loop already exists elsewhere: [CodeRabbit CLI](https://docs
 | 2 | **Recheck after a fix** | Avoid repeatedly reviewing the same unchanged code. | Linked current-source requests and stale detection are shipped; next evaluate a verified resolved/still-present comparison without treating model agreement as proof. |
 | 3 | **Repository review profiles** | Make a useful review repeatable without a long prompt. | Versioned provider/model, context rules, budgets and review focus: correctness, regression coverage or a specific repository contract. |
 | 4 | **Context preview and explicit branch scope** | Know what the reviewer actually saw. | Preview included/omitted files and compare an explicit Git base and head, including relevant callers/tests within a visible budget. |
-| 5 | **Portable review report** | Discuss a finding in an issue or PR and keep the decision. | Export Markdown/JSON with source snapshot, evidence, decisions and measured runtime usage. Local export first; automatic PR posting is separate. |
+| 5 | **Portable review report — shipped** | Discuss a finding in an issue or PR and keep the decision. | Local Markdown export with effective verdicts, evidence and hashes is available. Portable execution artifacts and richer runtime metrics remain future work; automatic posting is separate. |
 
 Validate the shipped evidence workflow with users before a multi-model panel. A panel introduces more context transfer, latency and correlated mistakes; disagreement can guide investigation but agreement should not automatically mark a finding confirmed.
 
@@ -58,3 +58,5 @@ Start with a small group of developers who already ask their agent for reviews. 
 Publish a short demo showing one finding confirmed and another dismissed, with the author and synthetic cases clearly identified. Link to the reproducible example, actual limitations and a simple contribution path. A local code change can be shown without publishing the developer's repository.
 
 Before a broad launch, compare three workflows on a small disclosed corpus: the coding agent's own review, a manually requested second review, and that same second reviewer through GiviLoop. Include clean cases and failures, hold context/model settings comparable, and record active human time as well as latency. Repeat use and verified value matter more than stars or model count.
+
+The next adoption step is the [five-user pilot](before-commit.md#small-adoption-pilot). The kit is ready; participant recruitment, first real trials and repeat-use measurements are still pending.

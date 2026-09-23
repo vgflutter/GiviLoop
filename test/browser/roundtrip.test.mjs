@@ -317,6 +317,45 @@ async function connect(t, f) {
   return client;
 }
 
+test('live demo transfers only its public example and exports independently reproduced evidence', { timeout: 30000 }, async t => {
+  const f = otherFixture(t, webCases[1]);
+  // The demo starts a child CLI; instrument that real-browser child as well.
+  f.env.NODE_OPTIONS = `${f.env.NODE_OPTIONS ?? ''} --import ${JSON.stringify(preload)}`;
+  writeFileSync(path.join(f.repo, 'private.txt'), 'PRIVATE_PROJECT_CONTEXT');
+  const result = await cli(f, 'demo', ['--provider', 'claude-web', '--browser-profile', f.profile, '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  const demo = JSON.parse(result.stdout);
+  assert.equal(demo.state, 'completed');
+  assert.equal(demo.submitted, true);
+  assert.match(demo.verification, /4 regression cases passed/);
+  assert.equal(readFileSync(demo.responsePath, 'utf8'), answer);
+  assert.match(readFileSync(demo.reportPath, 'utf8'), /Bundled demonstration/);
+  assert.equal(f.events().filter(e => e.action === 'submit').length, 1);
+  assert.doesNotMatch(f.events().find(e => e.action === 'submit').prompt, /PRIVATE_PROJECT_CONTEXT/);
+  const finish = await cli(f, 'demo', ['--finish', '--json']);
+  assert.equal(finish.code, 0, finish.stderr);
+  assert.equal(f.events().filter(e => e.action === 'submit').length, 1, 'finish must never send again');
+});
+
+test('demo login attention preserves one request; resume and finish complete it without another submission', { timeout: 35000 }, async t => {
+  const f = otherFixture(t, webCases[1]);
+  f.env.NODE_OPTIONS = `${f.env.NODE_OPTIONS ?? ''} --import ${JSON.stringify(preload)}`;
+  f.env.GIVILOOP_TEST_LOGIN_PATH = '/login';
+  const paused = await cli(f, 'demo', ['--provider', 'claude-web', '--browser-profile', f.profile, '--json']);
+  assert.equal(paused.code, 1, paused.stderr);
+  const demo = JSON.parse(paused.stdout);
+  assert.equal(demo.state, 'needs-attention');
+  assert.equal(demo.submitted, false);
+  assert.equal(f.events().filter(e => e.action === 'submit').length, 0);
+  delete f.env.GIVILOOP_TEST_LOGIN_PATH;
+  const resumed = await cli({ ...f, repo: demo.repositoryPath }, 'resume', []);
+  assert.equal(resumed.code, 0, resumed.stderr);
+  const finished = await cli(f, 'demo', ['--finish', '--json']);
+  assert.equal(finished.code, 0, finished.stderr);
+  assert.equal(JSON.parse(finished.stdout).runId, demo.runId);
+  assert.equal(f.events().filter(e => e.action === 'submit').length, 1);
+});
+
 test('CLI review uses saved preferences and resolves a relative repository once', { timeout: 25000 }, async t => {
   const f = setup(t, { archive: true });
   // We need a Git repository, but this review is inline text, without upload.

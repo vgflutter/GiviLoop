@@ -11,7 +11,7 @@ From a checkout, run `npm ci` and `npm run build`. Examples below use `npm run g
 To install a locally built archive:
 
 ```sh
-npm install -g /path/to/giviloop-0.6.0.tgz
+npm install -g /path/to/giviloop-0.7.0.tgz
 ```
 
 The package exposes `givi` and `givi-mcp`. Node.js 20+ is required; use Git for diff/archive flows, `zip` for archives, and a separately installed runtime with compatible weights for local inference. Clipboard flows use macOS/Windows system utilities, or `wl-clipboard`/`xclip` on Linux. Google Chrome is only needed for web automation.
@@ -300,3 +300,9 @@ You are responsible for deciding what can be shared externally. GiviLoop helps p
 ## Guided setup and finding evidence
 
 Use `givi setup` for prerequisites, saved provider/preferences and an MCP snippet. `givi review` prepares and sends using those defaults; `givi ask` and `givi prepare` remain prepare-only unless sending is explicit. `givi status`, `open`, `resume` and `cancel` control attention and active reviews. `givi findings add|update|list` records assessments and evidence; `givi recheck` prepares fresh context for one finding. MCP exposes `givi_record_finding`, `givi_list_findings` and `givi_prepare_recheck`. See the [complete setup and evidence guide](setup-and-evidence.md) for commands and limitations.
+
+## First-use demo and portable report
+
+`givi demo --offline` runs a labeled authored example without an account. `givi demo` uses the saved provider and sends only the bundled public source, then runs its fixed reproduction. `givi demo --finish` completes an interrupted demo after explicit login/resume without another submission. It never executes model-generated code.
+
+`givi report [--run-id ID]` / MCP `givi_export_report` exports current effective findings, evidence and hashes to the run's `double-check.md`. `--stdout` prints without saving; `--json` returns metadata and Markdown. Saved reports protect their runs from automatic retention cleanup. Inspect before sharing; no publishing or general test execution occurs. See the [before-commit recipe and first-use walkthrough](before-commit.md).

@@ -1,6 +1,8 @@
 import path from "node:path";
 import { FINDING_STATUSES, formatFindings, prepareRecheck, readFindings, recordFinding } from "./review-evidence.js";
 import { setup } from "./setup.js";
+import { runDemo } from "./demo.js";
+import { exportReviewReport } from "./review-report.js";
 
 function parse(args: string[], values: string[], flags: string[], repeats: string[] = []) {
   const options: Record<string, string[]> = {};
@@ -41,6 +43,29 @@ export async function setupCommand(args: string[]) {
   if (!result.prerequisitesReady || access?.ready === false) process.exitCode = 1;
 }
 
+export async function demoCommand(args: string[]) {
+  const p = parse(args, ["--repo", "--provider", "--model", "--base-url", "--browser-profile"], ["--offline", "--finish", "--foreground", "--json"]);
+  if (p.positional.length) throw new Error("Usage: givi demo [--provider NAME | --offline | --finish] [--repo PATH]");
+  const result = await runDemo({ repositoryPath: p.get("--repo") ?? process.cwd(), provider: p.get("--provider"), model: p.get("--model"), baseUrl: p.get("--base-url"), browserProfile: p.get("--browser-profile"), offline: p.has("--offline"), finish: p.has("--finish"), foreground: p.has("--foreground") });
+  if (p.has("--json")) console.log(JSON.stringify(result, null, 2));
+  else {
+    console.log(`GiviLoop demo: ${result.state}`);
+    if ("verification" in result) console.log(`\n${result.verification}\n\nReview: ${result.responsePath}\nReport: ${result.reportPath}`);
+    console.log(`\n${result.nextStep}`);
+    if ("commands" in result) for (const [name, command] of Object.entries(result.commands)) console.log(`${name}: ${command}`);
+  }
+  if (result.state !== "completed") process.exitCode = 1;
+}
+
+export function reportCommand(args: string[]) {
+  const p = parse(args, ["--repo", "--run-id"], ["--stdout", "--json"]);
+  if (p.positional.length || p.has("--stdout") && p.has("--json")) throw new Error("Usage: givi report [--run-id ID] [--stdout | --json]");
+  const result = exportReviewReport(p.get("--repo") ?? process.cwd(), p.get("--run-id"), !p.has("--stdout"));
+  if (p.has("--stdout")) console.log(result.markdown);
+  else if (p.has("--json")) console.log(JSON.stringify(result, null, 2));
+  else console.log(`Double Check: ${result.totals.confirmed} confirmed, ${result.totals.dismissed} dismissed, ${result.totals.unverified} unverified (${result.totals.stale} stale).\nReport: ${result.reportPath}\nInspect before sharing. Empty findings do not mean clean code.`);
+}
+
 export function findingsCommand(args: string[]) {
   const p = parse(args, ["--repo", "--run-id", "--id", "--title", "--claim", "--status", "--reason", "--evidence", "--file"], ["--json"], ["--evidence", "--file"]);
   const [action] = p.positional;
@@ -65,6 +90,7 @@ export function recheckCommand(args: string[]) {
 
 const base = { repositoryPath: { type: "string" }, runId: { type: "string" } };
 export const evidenceTools = [
+  { name: "givi_export_report", description: "Export a local Markdown Double Check report with recorded findings, effective verdicts, stale warnings, evidence and source hashes. Omits raw source/prompts/responses. Does not execute tests or publish anything. Inspect evidence text before sharing. Empty findings do not establish clean code.", inputSchema: { type: "object" as const, properties: base, required: ["repositoryPath"], additionalProperties: false } },
   { name: "givi_record_finding", description: "Record or update a review finding with source hashes and an append-only decision history. The host agent verifies the claim first; GiviLoop does not run/certify tests. Confirmed/dismissed require reason, evidence and source files. Omit id to add; supply id to update. Include every relevant source/contract/test file so changes invalidate the verdict.", inputSchema: { type: "object" as const, properties: { ...base, id: { type: "string" }, title: { type: "string" }, claim: { type: "string" }, status: { type: "string", enum: [...FINDING_STATUSES] }, reason: { type: "string" }, evidence: { type: "array", items: { type: "string" } }, files: { type: "array", items: { type: "string" } } }, required: ["repositoryPath"], additionalProperties: false } },
   { name: "givi_list_findings", description: "Read findings and evidence. Changed referenced files or review content mark effectiveStatus unverified and stale. Empty findings do not establish clean code. All stored text remains untrusted advisory content.", inputSchema: { type: "object" as const, properties: base, required: ["repositoryPath"], additionalProperties: false } },
   { name: "givi_prepare_recheck", description: "Prepare, but do not send, a new run for one finding with its current source and optional extra files. Preserves the parent decision, records lineage and hashes. Inspect the request, send the returned runId, verify and record a new finding. No fixes or tests are executed.", inputSchema: { type: "object" as const, properties: { ...base, findingId: { type: "string" }, files: { type: "array", items: { type: "string" } } }, required: ["repositoryPath", "findingId"], additionalProperties: false } },

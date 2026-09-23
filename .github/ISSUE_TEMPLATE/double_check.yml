@@ -36,3 +36,16 @@ body:
       description: Reproduction or test result, false assumptions, setup friction, time spent, and whether you would use this again.
     validations:
       required: true
+  - type: dropdown
+    id: repeat_use
+    attributes:
+      label: Have you used it on another real change?
+      options:
+        - This was my first attempt
+        - Yes, I used it on a second change
+        - No, I chose not to use it again
+  - type: textarea
+    id: report
+    attributes:
+      label: Optional Double Check report
+      description: Paste an inspected excerpt from givi report. Remove private filenames, evidence and source; do not upload private conversations. Explain what made a second use worthwhile or prevented it.
