@@ -105,13 +105,15 @@ See a [real report from developing GiviLoop](docs/examples/double-check-report.m
 
 ## Make the double check automatic
 
-After configuring your reviewer and connecting the MCP server, enable it **in the project you want reviewed**:
+After configuring your reviewer, enable it **in the project you want reviewed**. For Codex:
 
 ```sh
-givi auto-review enable
+givi auto-review enable --client codex
 ```
 
-In a source checkout, use `npm run givi -- auto-review enable --repo /path/to/project`. Run setup for that same project first. Start a new agent session to load the added `AGENTS.md` rule. Then ask for an ordinary code change: the agent calls `givi_auto_review` before its final answer, selects the task's changed files, checks the returned claims and saves evidence. **This is an agent instruction, not a file watcher or a guaranteed IDE hook.** An agent that does not load/follow the rule will not trigger it.
+In a source checkout, use `npm run givi -- auto-review enable --client codex --repo /path/to/project`. Run setup for that same project first. This installs the project instruction and local Codex MCP settings, including approval for the six review-workflow tools. Other tools still prompt. Start a new Codex session in the trusted project. Other MCP clients: connect the server above and use `enable` without `--client`.
+
+**Tested in fresh Codex CLI sessions:** an ordinary coding request, without mentioning GiviLoop, triggered one real Claude review, followed by assessment and a saved report. This remains instruction-driven: a client must load and follow `AGENTS.md`. [Exact validation and client setup](docs/automatic-review.md).
 
 - Off by default. Enabling authorizes sending selected source to the pinned reviewer; provider quotas and terms still apply.
 - One automatic submission per task and unchanged snapshot. Documentation-only selections are skipped; failures/login suspend further automatic sends.
@@ -123,7 +125,7 @@ Use `givi auto-review status` to inspect configuration, or `givi auto-review dis
 ## Install, learn, contribute
 
 - [Latest release and installable package](https://github.com/vgflutter/GiviLoop/releases/latest) · [CLI/MCP reference](docs/usage.md)
-- [Current provider results](docs/web-providers.md) · [Troubleshooting](docs/troubleshooting.md) · [0.8.0 changes and limits](docs/releases/0.8.0.md)
+- [Current provider results](docs/web-providers.md) · [Troubleshooting](docs/troubleshooting.md) · [0.8.1 changes and validation](docs/releases/0.8.1.md)
 - [Report a bug or a Double Check experience](https://github.com/vgflutter/GiviLoop/issues/new/choose) · [Contributing](CONTRIBUTING.md) · [Roadmap](docs/roadmap.md)
 
 Add `.giviloop/` to the reviewed repository's `.gitignore`: run files can contain source and prompts. Redaction is best effort. [Data handling](docs/usage.md#safety-and-legal).

@@ -6,16 +6,20 @@ Enable a second opinion after the coding agent finishes a change and its checks,
 
 ```sh
 givi setup --repo /path/to/project --provider claude-web --non-interactive
-givi auto-review enable --repo /path/to/project
+givi auto-review enable --client codex --repo /path/to/project
 ```
 
-For local inference, setup with `--provider ollama --model YOUR_INSTALLED_MODEL` (or another supported local runtime). Use `npm run givi --` in a source checkout. Setup generates `.giviloop/mcp.json`; connect that server in your client. Web login, when needed, remains a separate initial setup step.
+For local inference, setup with `--provider ollama --model YOUR_INSTALLED_MODEL` (or another supported local runtime). Use `npm run givi --` in a source checkout. Web login, when needed, remains a separate initial setup step.
+
+`--client codex` installs a managed section in **project-local `.codex/config.toml`** with the current Node/server paths and a 240-second MCP timeout. It preapproves only `givi_auto_review`, `givi_read_external_review`, `givi_record_finding`, `givi_list_findings`, `givi_export_report` and `givi_status`; other GiviLoop tools remain on prompt. It does not change global approvals, sandboxing or project trust. Keep these machine-specific settings local, and reinstall after moving the executable. Existing unrelated settings are preserved. An existing unmanaged GiviLoop entry is never overwritten: merge the generated `.giviloop/codex-auto-review.toml` explicitly instead. See [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
+
+For another MCP client, connect the server from setup's `.giviloop/mcp.json` and run `enable` without `--client`. Configure that client's tool permissions explicitly; generic enable does not edit client settings.
 
 Enable adds a bounded section to the project's `AGENTS.md`, preserving other instructions, and saves local consent plus a copy of the reviewer configuration in `.giviloop/auto-review.json`. It forces background browser mode. Later changes to ordinary setup preferences do not silently change the automatic destination: enable again to adopt them. Enable itself sends nothing. Keep `.giviloop/` ignored; another checkout must enable independently even if it receives the shared AGENTS.md rule.
 
 Start a new agent session after changing instructions. Codex loads project instructions at session startup; nested overrides and instruction size limits can affect what it reads. [Official instruction-loading documentation](https://learn.chatgpt.com/docs/agent-configuration/agents-md).
 
-**This is instruction-driven, not an IDE completion hook, daemon or file watcher.** The agent must load the rule, have the MCP tool and follow it. GiviLoop cannot force a host to call a tool. Other clients can adopt the same rule through their supported instruction mechanism; automatic installation currently targets AGENTS.md only. No extra API key is required by this feature.
+**This is instruction-driven, not an IDE completion hook, daemon or file watcher.** The agent must load the rule, have the MCP tool and follow it. GiviLoop cannot force a host to call a tool. Codex must trust the project before it loads project configuration; use the client's normal trust flow and restart the session. Other clients can adopt the same rule through their supported instruction mechanism. No extra API key is required by this feature.
 
 ## What happens
 
@@ -45,7 +49,7 @@ givi status --run-id RUN_ID
 givi auto-review disable
 ```
 
-Disable removes the managed instruction section and revokes local enablement; it retains evidence and history. An active operation owns the configuration lock: cancel with `givi cancel --run-id RUN_ID`, wait for its worker to close, then disable. Don't delete locks while their worker is active.
+Disable removes the managed instruction and Codex configuration sections and revokes local enablement; it retains evidence and history. Restart Codex to unload the client settings. An active operation owns the configuration lock: cancel with `givi cancel --run-id RUN_ID`, wait for its worker to close, then disable. Don't delete locks while their worker is active.
 
 Login, CAPTCHA, delivery errors, cancellation and interrupted attempts suspend further automatic submissions across tasks. Repeating enable does not clear that history. For a known **not-yet-submitted** browser request, explicitly use `givi open --run-id RUN_ID`, finish setup, quit Chrome, then `givi resume --run-id RUN_ID`. Resume checks submission state and the request hash. It uses the original snapshot: inspect newer edits before treating the response as current.
 
@@ -61,4 +65,8 @@ This allows **new tasks with changed snapshots**, without resending, certifying 
 
 After enabling and restarting the agent, ask it for an ordinary small code change, without mentioning GiviLoop. Check that it calls `givi_auto_review` once, reads the response, verifies findings and reports the real outcome. Inspect `givi auto-review status`, the run's metadata and exported report. A second invocation for that task must return `task-already-reviewed` without opening Chrome; docs-only selections should send nothing. If the host never calls the tool, inspect loaded instructions/MCP configuration; enabling alone is not proof the host lifecycle works.
 
-Development tests exercise policy installation, scope/redaction, duplicate suppression across CLI/MCP, concurrency, stale source, failed-check skipping, interrupted/failed history, cancellation and browser attention/resume. Provider-shaped browser fixtures exercise the real Chrome transport, not model accuracy. See the [validation note](releases/0.8.0.md#live-validation-2026-09-23) for the separately recorded live check.
+If Codex reports `MCP tool call requires approval, but approval policy is never`, the host blocked the call before GiviLoop received it. Install the scoped settings with `enable --client codex`, trust the project and start a new session. Do not disable sandboxing or approve every tool to address this error. Existing client-level disabled-tool policies can still prevent invocation.
+
+Fresh Codex CLI sessions have now completed this sequence against signed-in Claude using the installed project configuration, with no GiviLoop/review mention in the coding prompt. This closes the previously untested host-invocation step. It does not certify every client/frontend or replace the instruction-loading requirement. See [0.8.1 validation](releases/0.8.1.md) for versions, observations and the rejected windowless-browser experiment.
+
+Development tests exercise policy/client installation, scope/redaction, duplicate suppression across CLI/MCP, concurrency, stale source, failed-check skipping, interrupted/failed history, cancellation and browser attention/resume. Provider-shaped browser fixtures exercise the real Chrome transport, not model accuracy.

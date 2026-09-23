@@ -2001,6 +2001,7 @@ The browser adapter is experimental. See docs/costs-and-access.md.
 
 Commands:
   auto-review  enable|disable|status: opt into end-of-task review through AGENTS.md + MCP.
+            enable --client codex also installs project MCP settings and scoped tool approvals.
             run --task-id ID --checks passed|not-applicable|failed [--file PATH ...]
             acknowledge --run-id ID: unblock after inspecting a stopped failure; never resends.
   demo      Try a bundled public bug, independent reproduction and Markdown report.

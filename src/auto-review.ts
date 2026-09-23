@@ -13,6 +13,7 @@ import { acquireRunLock } from "./run-lock.js";
 import { runStatus } from "./run-status.js";
 import { RUN_ID_PATTERN } from "./run-storage.js";
 import { redactSecrets } from "./redaction.js";
+import { codexAutoConfig, configureCodexClient } from "./codex-config.js";
 
 const CONFIG = ".giviloop/auto-review.json";
 const HISTORY = ".giviloop/auto-review/history.json";
@@ -84,12 +85,13 @@ function instructions(root: string, install: boolean) {
     : previous.slice(0, start) + (install ? AUTO_REVIEW_INSTRUCTIONS : "") + previous.slice(end + END.length);
   if (next !== previous) atomicWrite(file, next);
 }
-export function configureAutoReview(repository: string, action: "enable" | "disable" | "status"): { enabled: boolean; reviewer?: Preferences; instructionsInstalled: boolean; lastAttempt?: Attempt; nextStep: string } {
+export function configureAutoReview(repository: string, action: "enable" | "disable" | "status", client?: "codex"): { enabled: boolean; reviewer?: Preferences; instructionsInstalled: boolean; codexConfigPath?: string; lastAttempt?: Attempt; nextStep: string } {
   const root = rootPath(repository);
   if (action === "status") {
     const policy = readPolicy(root);
     const file = safePath(root, "AGENTS.md");
-    return { enabled: policy?.enabled ?? false, reviewer: policy?.reviewer, instructionsInstalled: existsSync(file) && readFileSync(file, "utf8").includes(AUTO_REVIEW_INSTRUCTIONS), lastAttempt: history(root).at(-1), nextStep: "Enable installs an AGENTS.md rule. Your agent must load it and have the GiviLoop MCP server connected; no file watcher is installed." };
+    const codex = safePath(root, ".codex/config.toml");
+    return { enabled: policy?.enabled ?? false, reviewer: policy?.reviewer, instructionsInstalled: existsSync(file) && readFileSync(file, "utf8").includes(AUTO_REVIEW_INSTRUCTIONS), codexConfigPath: existsSync(codex) && readFileSync(codex, "utf8").includes(codexAutoConfig()) ? codex : undefined, lastAttempt: history(root).at(-1), nextStep: "Enable installs an AGENTS.md rule. Your agent must load it and have the GiviLoop MCP server connected; no file watcher is installed." };
   }
   mkdirSync(safePath(root, ".giviloop/auto-review"), { recursive: true });
   const release = acquireRunLock(safePath(root, ".giviloop/auto-review"), "automatic-review-configuration");
@@ -99,6 +101,8 @@ export function configureAutoReview(repository: string, action: "enable" | "disa
       if (!reviewer || reviewer.provider === "manual") throw new Error("Choose an automatic reviewer first: givi setup --provider NAME --non-interactive (local runtimes also require --model NAME).");
       if (isLocalProvider(reviewer.provider) && !reviewer.model) throw new Error("Save an explicit local model with givi setup before enabling automatic review.");
       // Install first: absent policy never authorizes transmission if this write fails.
+      atomicWrite(safePath(root, ".giviloop/codex-auto-review.toml"), codexAutoConfig() + "\n");
+      if (client === "codex") configureCodexClient(root, true);
       instructions(root, true);
       atomicJson(safePath(root, CONFIG), { schemaVersion: 1, enabled: true, reviewer: { ...reviewer, background: true } });
     } else {
@@ -106,9 +110,10 @@ export function configureAutoReview(repository: string, action: "enable" | "disa
       const p = readPolicy(root);
       if (p) atomicJson(safePath(root, CONFIG), { ...p, enabled: false });
       instructions(root, false);
+      configureCodexClient(root, false);
     }
     return { ...configureAutoReview(root, "status"), nextStep: action === "enable"
-      ? "Automatic review enabled for this checkout with the saved reviewer. Code may be sent to that provider and its quotas apply. Start a new agent session to load AGENTS.md; connect the MCP server."
+      ? `Automatic review enabled for this checkout with the saved reviewer. Code may be sent to that provider and its quotas apply. ${client === "codex" ? "Codex MCP settings and narrowly scoped tool approvals installed in .codex/config.toml. Start a new Codex session in this trusted project; the client must trust its project config." : "Start a new agent session to load AGENTS.md and connect MCP. For Codex use enable --client codex, or merge .giviloop/codex-auto-review.toml manually."}`
       : "Automatic review disabled. Existing responses/history remain. An in-flight review must be cancelled separately with givi cancel." };
   } finally { release(); }
 }

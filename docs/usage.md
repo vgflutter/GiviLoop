@@ -32,7 +32,7 @@ That profile remains anonymous only while nobody signs into it. Availability, qu
 
 ## Optional automatic task-end review
 
-`givi auto-review enable --repo /path/to/project` installs an AGENTS.md rule and pins the saved reviewer for that local checkout. Connect MCP and start a new agent session. The host calls `givi_auto_review` once at task completion with selected changed files, a stable task ID and the outcome of its checks. The host still verifies findings; delivery alone is not a pass. Use `auto-review status` / `disable` to inspect or revoke it. [Scope, guards and recovery](automatic-review.md).
+`givi auto-review enable --repo /path/to/project` installs an AGENTS.md rule and pins the saved reviewer for that local checkout. Add `--client codex` to install project-local MCP settings and scoped workflow-tool approvals for Codex; otherwise connect MCP in your client. Start a new session in the trusted project. The host calls `givi_auto_review` once at task completion with selected changed files, a stable task ID and the outcome of its checks. The host still verifies findings; delivery alone is not a pass. Use `auto-review status` / `disable` to inspect or revoke it. [Scope, guards and recovery](automatic-review.md).
 
 ## Local Inference
 
