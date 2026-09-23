@@ -11,7 +11,7 @@ From a checkout, run `npm ci` and `npm run build`. Examples below use `npm run g
 To install a locally built archive:
 
 ```sh
-npm install -g /path/to/giviloop-0.7.0.tgz
+npm install -g /path/to/giviloop-0.8.0.tgz
 ```
 
 The package exposes `givi` and `givi-mcp`. Node.js 20+ is required; use Git for diff/archive flows, `zip` for archives, and a separately installed runtime with compatible weights for local inference. Clipboard flows use macOS/Windows system utilities, or `wl-clipboard`/`xclip` on Linux. Google Chrome is only needed for web automation.
@@ -28,7 +28,11 @@ npm run givi -- ask --repo . --file examples/double-check/sum.ts \
   --browser-profile "$HOME/.giviloop/browser-profiles/chatgpt-anonymous"
 ```
 
-That profile remains anonymous only while nobody signs into it. Availability, quotas and features depend on the website; successful anonymous and authenticated reviews are recorded in the [current validation report](capabilities-and-validation-2026-09-22.md). Claude currently has a manual copy/ingest flow only, and the live anonymous check redirected to login.
+That profile remains anonymous only while nobody signs into it. Availability, quotas and features depend on the website; successful anonymous and authenticated reviews are recorded in the [current validation report](capabilities-and-validation-2026-09-22.md). Claude supports automated text reviews with a signed-in account; anonymous access redirected to login in live checks. See [current provider results](web-providers.md).
+
+## Optional automatic task-end review
+
+`givi auto-review enable --repo /path/to/project` installs an AGENTS.md rule and pins the saved reviewer for that local checkout. Connect MCP and start a new agent session. The host calls `givi_auto_review` once at task completion with selected changed files, a stable task ID and the outcome of its checks. The host still verifies findings; delivery alone is not a pass. Use `auto-review status` / `disable` to inspect or revoke it. [Scope, guards and recovery](automatic-review.md).
 
 ## Local Inference
 

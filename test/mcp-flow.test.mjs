@@ -37,7 +37,7 @@ test("MCP prepare -> CLI manual import -> MCP analyze/act preserves review and h
   const source = path.join(f.repo, "source.txt");
   writeFileSync(source, "changed\n");
   const { tools } = await client.listTools();
-  assert.equal(tools.length, 19);
+  assert.equal(tools.length, 20);
   assert.ok(tools.some(tool => tool.name === "givi_ask_local_llm"));
   assert.ok(tools.some(tool => tool.name === "givi_send_to_local_llm"));
   assert.ok(tools.some(tool => tool.name === "givi_local_models"));

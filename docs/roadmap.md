@@ -1,6 +1,6 @@
 # Product direction
 
-Updated for 0.7.0, 23 September 2026. **Now implemented:** offline/live public demo with fixed reproduction, portable Markdown reports and a before-commit recipe, quiet browser defaults, saved project preferences, one-command `review`, status/open/resume/cancel, bounded MCP browser reuse, guided setup, structured finding decisions with evidence/history and file hashes, stale detection, and preparation of a targeted recheck linked to its parent. The host agent still verifies findings; GiviLoop does not execute/certify tests or automatically mark fixes resolved. [Current commands](setup-and-evidence.md). Remaining proposals below are not release commitments.
+Updated for 0.8.0, 23 September 2026. **Now implemented:** opt-in instruction-driven task-end review with pinned reviewer, persistent deduplication and explicit recovery, offline/live public demo with fixed reproduction, portable Markdown reports and a before-commit recipe, quiet browser defaults, saved project preferences, one-command `review`, status/open/resume/cancel, bounded MCP browser reuse, guided setup, structured finding decisions with evidence/history and file hashes, stale detection, and preparation of a targeted recheck linked to its parent. The host agent still verifies findings; GiviLoop does not execute/certify tests or automatically mark fixes resolved. [Current commands](setup-and-evidence.md). Remaining proposals below are not release commitments.
 
 ## Focus
 
@@ -58,5 +58,7 @@ Start with a small group of developers who already ask their agent for reviews. 
 Publish a short demo showing one finding confirmed and another dismissed, with the author and synthetic cases clearly identified. Link to the reproducible example, actual limitations and a simple contribution path. A local code change can be shown without publishing the developer's repository.
 
 Before a broad launch, compare three workflows on a small disclosed corpus: the coding agent's own review, a manually requested second review, and that same second reviewer through GiviLoop. Include clean cases and failures, hold context/model settings comparable, and record active human time as well as latency. Repeat use and verified value matter more than stars or model count.
+
+The optional automatic workflow should now be included in that comparison: does it produce useful verified findings without reminders, or just extra latency and noise? Invocation depends on the host loading and following the rule; it is not a guaranteed IDE hook.
 
 The next adoption step is the [five-user pilot](before-commit.md#small-adoption-pilot). The kit is ready; participant recruitment, first real trials and repeat-use measurements are still pending.

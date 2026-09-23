@@ -17,6 +17,8 @@ export function pruneCompletedRuns(repositoryPath: string, keep: number): void {
       // Evidence and recheck lineage must survive the automatic ten-run cleanup.
       // Users can remove these deliberately after exporting their assessments.
       if (existsSync(path.join(dir, "findings.json")) || existsSync(path.join(dir, "double-check.md"))) return false;
+      // Automatic deduplication/recovery history references these runs.
+      try { if (JSON.parse(readFileSync(path.join(dir, "metadata.json"), "utf8")).mode === "automatic-review") return false; } catch { /* Older runs may lack metadata. */ }
       if (!existsSync(path.join(dir, "external-review-response.md"))) return false;
       for (const statusFile of ["browser-status.json", "local-status.json"]) {
         const statusPath = path.join(dir, statusFile);

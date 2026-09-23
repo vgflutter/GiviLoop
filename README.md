@@ -7,6 +7,7 @@ GiviLoop sends selected code or Git changes to a second reviewer and brings the 
 CLI + MCP · Web chat + local models · Open source · MIT
 
 - **Double Check:** have your agent verify another model's findings before changing code.
+- **Automatic at task completion, if enabled:** your agent requests one review after its checks, verifies the findings and gives you a short result. No separate review prompt each time.
 - **Save API tokens on the second review:** use available web chat access instead of making another token-billed model API call. GiviLoop sends the selected context and brings back the answer; no model API key is required.
 
 **What “token savings” means:** if you would otherwise buy that review through an API, this avoids its separate API input/output token charges. The web chat still uses its plan's quotas, and your coding agent still uses tokens to prepare context and check the answer. **Total token savings are not measured.** [Costs and access](docs/costs-and-access.md).
@@ -102,10 +103,27 @@ Finish with **`givi_export_report`** or **`givi report`**: a local Markdown repo
 
 See a [real report from developing GiviLoop](docs/examples/double-check-report.md): one corrupted-ledger bug independently reproduced and fixed, and one CLI error-handling claim dismissed after testing.
 
+## Make the double check automatic
+
+After configuring your reviewer and connecting the MCP server, enable it **in the project you want reviewed**:
+
+```sh
+givi auto-review enable
+```
+
+In a source checkout, use `npm run givi -- auto-review enable --repo /path/to/project`. Run setup for that same project first. Start a new agent session to load the added `AGENTS.md` rule. Then ask for an ordinary code change: the agent calls `givi_auto_review` before its final answer, selects the task's changed files, checks the returned claims and saves evidence. **This is an agent instruction, not a file watcher or a guaranteed IDE hook.** An agent that does not load/follow the rule will not trigger it.
+
+- Off by default. Enabling authorizes sending selected source to the pinned reviewer; provider quotas and terms still apply.
+- One automatic submission per task and unchanged snapshot. Documentation-only selections are skipped; failures/login suspend further automatic sends.
+- Chrome stays minimized where supported. Human verification waits for you; there are no automatic clicks or retries. Window-manager flashes remain possible.
+- The agent highlights confirmed bugs and material uncertainties. An unverified or skipped review is never presented as a pass.
+
+Use `givi auto-review status` to inspect configuration, or `givi auto-review disable` to turn it off. [Scope, recovery and testing](docs/automatic-review.md).
+
 ## Install, learn, contribute
 
 - [Latest release and installable package](https://github.com/vgflutter/GiviLoop/releases/latest) · [CLI/MCP reference](docs/usage.md)
-- [Current provider results](docs/web-providers.md) · [Troubleshooting](docs/troubleshooting.md) · [0.7.0 changes and limits](docs/releases/0.7.0.md)
+- [Current provider results](docs/web-providers.md) · [Troubleshooting](docs/troubleshooting.md) · [0.8.0 changes and limits](docs/releases/0.8.0.md)
 - [Report a bug or a Double Check experience](https://github.com/vgflutter/GiviLoop/issues/new/choose) · [Contributing](CONTRIBUTING.md) · [Roadmap](docs/roadmap.md)
 
 Add `.giviloop/` to the reviewed repository's `.gitignore`: run files can contain source and prompts. Redaction is best effort. [Data handling](docs/usage.md#safety-and-legal).

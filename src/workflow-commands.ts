@@ -3,6 +3,20 @@ import { FINDING_STATUSES, formatFindings, prepareRecheck, readFindings, recordF
 import { setup } from "./setup.js";
 import { runDemo } from "./demo.js";
 import { exportReviewReport } from "./review-report.js";
+import { automaticReview, configureAutoReview, acknowledgeAutomaticReview } from "./auto-review.js";
+
+export async function autoReviewCommand(args: string[]) {
+  const p = parse(args, ["--repo", "--task-id", "--checks", "--file", "--run-id"], [], ["--file"]);
+  const [action] = p.positional;
+  if (p.positional.length !== 1 || !["enable", "disable", "status", "run", "acknowledge"].includes(action)) throw new Error("Usage: givi auto-review enable|disable|status|run|acknowledge [--repo PATH]");
+  const repository = p.get("--repo") ?? process.cwd();
+  if (action !== "run" && ["--task-id", "--checks", "--file"].some(key => p.has(key)) || action !== "acknowledge" && p.has("--run-id")) throw new Error("Run options require auto-review run; --run-id requires acknowledge.");
+  const result = action === "run" ? await automaticReview({ repositoryPath: repository, taskId: p.get("--task-id")!, checks: p.get("--checks") as "passed", files: p.all("--file") })
+    : action === "acknowledge" ? acknowledgeAutomaticReview(repository, p.get("--run-id")!)
+    : configureAutoReview(repository, action as "enable" | "disable" | "status");
+  console.log(JSON.stringify(result, null, 2));
+  if ("state" in result && ["failed", "needs-attention", "suspended", "busy"].includes(result.state)) process.exitCode = 1;
+}
 
 function parse(args: string[], values: string[], flags: string[], repeats: string[] = []) {
   const options: Record<string, string[]> = {};

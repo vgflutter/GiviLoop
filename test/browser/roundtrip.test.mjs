@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -316,6 +316,57 @@ async function connect(t, f) {
     args: ["--import", preload, path.join(distDir, "mcp-server.js")], cwd: repoRoot, env: f.env, stderr: "pipe" }));
   return client;
 }
+
+async function enableAutomaticFixture(f) {
+  execFileSync('git', ['init', f.repo], { stdio: 'ignore' });
+  execFileSync('git', ['-C', f.repo, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'fixture'], { stdio: 'ignore' });
+  writeFileSync(path.join(f.repo, 'sum.js'), 'export const sum = xs => xs.reduce((a,b) => a+b);\n');
+  const configured = await cli(f, 'setup', ['--provider', 'claude-web', '--non-interactive', '--browser-profile', f.profile]);
+  assert.equal(configured.code, 0, configured.stderr);
+  const enabled = await cli(f, 'auto-review', ['enable']);
+  assert.equal(enabled.code, 0, enabled.stderr);
+}
+
+test('automatic MCP review uses minimized Chrome, sends once and is deduplicated across CLI/MCP', { timeout: 35000 }, async t => {
+  const f = otherFixture(t, webCases[1]);
+  f.env.GIVILOOP_TEST_CAPTURE_WINDOW_STATE = '1';
+  await enableAutomaticFixture(f);
+  const client = await connect(t, f);
+  const input = { repositoryPath: f.repo, taskId: 'user-task', checks: 'passed', files: ['sum.js'] };
+  const response = await client.callTool({ name: 'givi_auto_review', arguments: input });
+  assert.notEqual(response.isError, true, JSON.stringify(response));
+  const result = JSON.parse(response.content[0].text);
+  assert.equal(result.state, 'completed');
+  assert.equal(readFileSync(result.responsePath, 'utf8'), answer);
+  const browserStatus = JSON.parse(readFileSync(path.join(f.latest().dir, 'browser-status.json')));
+  assert.equal(browserStatus.background, true);
+  assert.equal(browserStatus.headless, false);
+  const duplicate = await cli(f, 'auto-review', ['run', '--task-id', 'different-task', '--checks', 'passed', '--file', 'sum.js']);
+  assert.equal(JSON.parse(duplicate.stdout).reason, 'unchanged-snapshot');
+  writeFileSync(path.join(f.repo, 'sum.js'), 'export const sum = xs => xs.reduce((a,b) => a+b, 0);\n');
+  const afterFix = await client.callTool({ name: 'givi_auto_review', arguments: input });
+  assert.equal(JSON.parse(afterFix.content[0].text).reason, 'task-already-reviewed');
+  assert.equal(f.events().filter(e => e.action === 'submit').length, 1);
+});
+
+test('automatic login attention suspends new tasks; explicit resume sends the original request once', { timeout: 35000 }, async t => {
+  const f = otherFixture(t, webCases[1]);
+  await enableAutomaticFixture(f);
+  f.env.GIVILOOP_TEST_LOGIN_PATH = '/login';
+  const paused = await cli(f, 'auto-review', ['run', '--task-id', 'login-task', '--checks', 'passed', '--file', 'sum.js']);
+  assert.equal(paused.code, 1, paused.stderr);
+  const result = JSON.parse(paused.stdout);
+  assert.equal(result.state, 'needs-attention');
+  const stopped = await cli(f, 'auto-review', ['run', '--task-id', 'new-task', '--checks', 'passed', '--file', 'sum.js']);
+  assert.equal(JSON.parse(stopped.stdout).state, 'suspended');
+  assert.equal(f.events().filter(e => e.action === 'submit').length, 0);
+  delete f.env.GIVILOOP_TEST_LOGIN_PATH;
+  const resumed = await cli(f, 'resume', ['--run-id', result.runId]);
+  assert.equal(resumed.code, 0, resumed.stderr);
+  const duplicate = await cli(f, 'auto-review', ['run', '--task-id', 'new-task', '--checks', 'passed', '--file', 'sum.js']);
+  assert.equal(JSON.parse(duplicate.stdout).reason, 'unchanged-snapshot');
+  assert.equal(f.events().filter(e => e.action === 'submit').length, 1);
+});
 
 test('live demo transfers only its public example and exports independently reproduced evidence', { timeout: 30000 }, async t => {
   const f = otherFixture(t, webCases[1]);

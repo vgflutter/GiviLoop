@@ -2,6 +2,8 @@
 
 The examples below use an installed `givi`. In a source checkout, substitute `npm run givi --` for `givi` after `npm ci` and `npm run build`.
 
+For opt-in review at the end of ordinary coding tasks, see [automatic review](automatic-review.md). Setup alone does not enable it.
+
 ## Guided setup
 
 ```sh

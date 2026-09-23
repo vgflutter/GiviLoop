@@ -20,6 +20,7 @@ import { VERSION } from "./version.js";
 import { evidenceTools } from "./workflow-commands.js";
 import { recordFinding, readFindings, prepareRecheck } from "./review-evidence.js";
 import { exportReviewReport } from "./review-report.js";
+import { automaticReview, autoReviewTool } from "./auto-review.js";
 import { webDefaults, readPreferences } from "./preferences.js";
 import { runStatus, cancelRun, openRun, resumeRun } from "./run-status.js";
 import { browserSessions } from "./providers/browser-sessions.js";
@@ -173,6 +174,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         : action === "open" ? "Only on explicit user request: show the dedicated browser for login/setup. Sends no prompt. User must close it before resume."
         : "Resume only a needs-attention review whose prompt was never submitted and whose request is unchanged. Never resends completed, uncertain or failed sends. Explicit foreground=true permits a visible session for uploads/verification.", inputSchema: { type: "object" as const, properties: { repositoryPath: { type: "string" }, runId: { type: "string" }, ...(action === "resume" ? { foreground: { type: "boolean" } } : {}) }, required: ["repositoryPath"], additionalProperties: false } })),
       ...evidenceTools,
+      autoReviewTool,
       {
         name: TOOL_ASK_LOCAL,
         description: "Ask a model running in Ollama, DwarfStar, llama.cpp, LM Studio or MLX to review a question and selected files. Fully automatic, no browser or cloud fallback. Saves a run, response, timing and token usage. Default response handling is analyze-only.",
@@ -586,6 +588,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   const toolName = request.params.name;
+  if (toolName === autoReviewTool.name) {
+    const input = readObject(request.params.arguments);
+    for (const key of Object.keys(input)) if (!(key in autoReviewTool.inputSchema.properties)) throw new Error(`Unsupported automatic-review argument: ${key}`);
+    if (!Array.isArray(input.files)) throw new Error("Select changed task files explicitly with files.");
+    const result = await automaticReview({ repositoryPath: readRequiredString(input, "repositoryPath"), taskId: readRequiredString(input, "taskId"), checks: readRequiredString(input, "checks") as "passed", files: readOptionalStringArray(input, "files"), signal: extra.signal, reuseBrowser: true });
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  }
   if (toolName === "givi_release_browser_sessions") return { content: [{ type: "text", text: JSON.stringify(await browserSessions.closeIdle()) }] };
   if (["givi_status", "givi_cancel", "givi_open", "givi_resume"].includes(toolName)) {
     const input = readObject(request.params.arguments);
@@ -781,6 +790,7 @@ function buildHelpToolResponse(): {
           "GiviLoop help",
           "",
           "GiviLoop brings a second review back to your coding agent: Double Check through web chat or local inference.",
+          "Optional automatic check: givi auto-review enable installs a project AGENTS.md rule. With MCP connected, call givi_auto_review at task completion with one stable taskId, selected changed files and checks. Disabled by default; no daemon, automatic retry or automatic fixes. Verify findings and export the report.",
           "",
           "Local inference:",
           "- Use givi_local_models with provider=ollama, dwarfstar, llama-cpp, lmstudio or mlx to discover installed/loaded models.",
