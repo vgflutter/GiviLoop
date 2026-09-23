@@ -4,6 +4,7 @@ import path from "node:path";
 import { atomicWrite } from "./browser-runtime.js";
 import { isLocalProvider, LOCAL_PROVIDERS, type LocalProvider, type LocalProviderInfo, type LocalReasoning, type LocalReviewResult } from "./local-types.js";
 import { acquireRunLock } from "../run-lock.js";
+import { runControl } from "../run-control.js";
 import { LocalInferenceError } from "./local-http.js";
 
 export type { LocalProvider } from "./local-types.js";
@@ -49,17 +50,19 @@ export async function sendLocalReview(options: LocalRunOptions): Promise<LocalRe
   const directory = path.dirname(options.responsePath);
   mkdirSync(directory, { recursive: true });
   const release = acquireRunLock(directory, options.provider);
+  const control = runControl(directory, options.signal);
   const status = {
     provider: options.provider, requestedModel: options.model, startedAt: new Date().toISOString(),
     endedAt: undefined as string | undefined, outcome: "running", errorCode: undefined as string | undefined,
     requestSha256: createHash("sha256").update(prompt).digest("hex"),
+    ownerPid: process.pid, controlToken: control.token,
   };
   const statusPath = path.join(directory, "local-status.json");
   try {
     atomicWrite(statusPath, JSON.stringify(status, null, 2) + "\n");
     const args = { prompt, model: options.model, baseUrl: options.baseUrl, timeoutMs: options.timeoutMs,
       maxOutputTokens: options.maxOutputTokens, contextTokens: options.contextTokens,
-      reasoning: options.reasoning, signal: options.signal };
+      reasoning: options.reasoning, signal: control.signal };
     const result = options.provider === "ollama"
       ? await (await import("./ollama.js")).sendToOllama(args)
       : options.provider === "dwarfstar"
@@ -84,6 +87,7 @@ export async function sendLocalReview(options: LocalRunOptions): Promise<LocalRe
     try { atomicWrite(statusPath, JSON.stringify(status, null, 2) + "\n"); } catch { /* Preserve original error. */ }
     throw error;
   } finally {
+    control.dispose();
     release();
   }
 }

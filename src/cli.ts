@@ -20,6 +20,8 @@ import { checkBrowserAccess, diagnoseBrowser, openLoginBrowser } from "./browser
 import { pruneCompletedRuns, RUN_ID_PATTERN } from "./run-storage.js";
 import { VERSION } from "./version.js";
 import { setupCommand, findingsCommand, recheckCommand } from "./workflow-commands.js";
+import { configuredCliArgs } from "./cli-preferences.js";
+import { runStatus, cancelRun, openRun, resumeRun } from "./run-status.js";
 import { probeLocalProvider, readLocalProvider, readLocalReasoning, sendLocalReview } from "./providers/local-review.js";
 import {
   sendToWebChat,
@@ -99,6 +101,7 @@ type SourceArchiveManifest = {
 };
 
 type Command =
+  | "review" | "status" | "open" | "resume" | "cancel"
   | "setup" | "findings" | "recheck"
   | "prepare"
   | "ask"
@@ -112,13 +115,40 @@ type Command =
   | "help";
 
 async function main(): Promise<void> {
-  const args = process.argv.slice(2);
+  let args = process.argv.slice(2);
   const command = (args[0] ?? "help") as Command;
 
   try {
     if (args.includes("--help") || args.includes("-h")) { printHelp(); return; }
     if (args[0] === "--version") { console.log(VERSION); return; }
+    args = configuredCliArgs(args);
     switch (command) {
+      case "review": {
+        const options = args.slice(1);
+        if (readOption(options, "--run-id")) throw new Error("review creates a new run. Use send or resume to select an existing --run-id.");
+        if (readOptions(options, "--file").length || readOptions(options, "-f").length || readOption(options, "--question")) {
+          if (!readOption(options, "--question")) options.push("--question", "Find concrete bugs, minimal corrections and regression tests. Respect the supplied contract.");
+          await ask(options);
+        } else {
+          if (!readOption(options, "--goal")) options.push("--goal", "Find concrete bugs, minimal corrections and regression tests.");
+          prepare(options);
+          await sendPrepared(options);
+        }
+        break;
+      }
+      case "status": case "cancel": case "open": case "resume": {
+        useRepository(args);
+        const id = readOption(args, "--run-id");
+        const report = command === "status" ? runStatus(process.cwd(), id)
+          : command === "cancel" ? cancelRun(process.cwd(), id)
+          : command === "open" ? await openRun(process.cwd(), id)
+          : await resumeRun(process.cwd(), id, args.includes("--foreground"));
+        if (command === "status" && !args.includes("--json")) {
+          const status = report as ReturnType<typeof runStatus>;
+          console.log(`GiviLoop: ${status.state}\n${status.runId ? `Run: ${status.runId}\n` : ""}${status.provider ? `Provider: ${status.provider}\n` : ""}${status.responsePath ? `Response: ${status.responsePath}\n` : ""}${status.nextStep}`);
+        } else console.log(JSON.stringify(report, null, 2));
+        break;
+      }
       case "setup": await setupCommand(args.slice(1)); break;
       case "findings": findingsCommand(args.slice(1)); break;
       case "recheck": recheckCommand(args.slice(1)); break;
@@ -159,7 +189,7 @@ async function main(): Promise<void> {
       case "browser": {
         const provider = webProvider(readOption(args, "--provider"));
         if (args[1] === "check") {
-          const report = await checkBrowserAccess(readOption(args, "--browser-profile"), args.includes("--headless"), readPositiveNumberOption(args, "--navigation-timeout-ms"), readVerificationWaitOption(args), provider);
+          const report = await checkBrowserAccess(readOption(args, "--browser-profile"), args.includes("--headless"), readPositiveNumberOption(args, "--navigation-timeout-ms"), readVerificationWaitOption(args), provider, readBackgroundOption(args) ?? !args.includes("--headless"));
           console.log(JSON.stringify(report, null, 2));
           if (!report.ready) process.exitCode = 1;
           break;
@@ -249,7 +279,7 @@ async function ask(args: string[]): Promise<void> {
     responsePath: reviewRun.responsePath,
     mode,
     headless: args.includes("--headless"),
-    background: args.includes("--background"),
+    background: readBackgroundOption(args),
     userDataDir: readOption(args, "--browser-profile"),
     navigationTimeoutMs: readPositiveNumberOption(args, "--navigation-timeout-ms"),
     verificationWaitMs: readVerificationWaitOption(args),
@@ -401,7 +431,7 @@ async function archiveSource(args: string[]): Promise<void> {
     attachmentPaths: [archivePath],
     mode,
     headless: args.includes("--headless"),
-    background: args.includes("--background"),
+    background: readBackgroundOption(args),
     userDataDir: readOption(args, "--browser-profile"),
     navigationTimeoutMs: readPositiveNumberOption(args, "--navigation-timeout-ms"),
     verificationWaitMs: readVerificationWaitOption(args),
@@ -621,7 +651,7 @@ async function sendPrepared(args: string[]): Promise<void> {
     attachmentPaths,
     mode,
     headless: args.includes("--headless"),
-    background: args.includes("--background"),
+    background: readBackgroundOption(args),
     userDataDir: readOption(args, "--browser-profile"),
     navigationTimeoutMs: readPositiveNumberOption(args, "--navigation-timeout-ms"),
     verificationWaitMs: readVerificationWaitOption(args),
@@ -654,6 +684,11 @@ async function sendPrepared(args: string[]): Promise<void> {
   }
 }
 
+function readBackgroundOption(args: string[]): boolean | undefined {
+  if (args.includes("--foreground") && (args.includes("--background") || args.includes("--headless"))) throw new Error("--foreground cannot be combined with --background or --headless.");
+  return args.includes("--foreground") ? false : args.includes("--background") ? true : undefined;
+}
+
 function readVerificationWaitOption(args: string[]): number | undefined {
   const raw = readOption(args, "--verification-wait-ms");
   if (raw === undefined) return undefined;
@@ -665,11 +700,12 @@ function readVerificationWaitOption(args: string[]): number | undefined {
 function validateDeliveryOptions(args: string[], destination?: string): void {
   if (destination && !isLocalProvider(destination)) webProvider(destination);
   const local = isLocalProvider(destination);
+  readBackgroundOption(args);
   const provided = (flag: string) => args.some(arg => arg === flag || arg.startsWith(flag + "="));
   if (local) {
     if (!readOption(args, "--model")?.trim()) throw new Error("Local inference requires --model. Run givi models --provider " + destination + " to list models.");
     if (readWebMode(args) !== "auto") throw new Error("Local inference supports --mode auto only.");
-    for (const flag of ["--headless", "--background", "--browser-profile", "--navigation-timeout-ms", "--verification-wait-ms", "--response-stable-ms", "--require-model"]) {
+    for (const flag of ["--headless", "--background", "--foreground", "--browser-profile", "--navigation-timeout-ms", "--verification-wait-ms", "--response-stable-ms", "--require-model"]) {
       if (provided(flag)) throw new Error(flag + " is a browser option and cannot be used for local inference.");
     }
     readLocalReasoning(readOption(args, "--reasoning"));
@@ -1938,8 +1974,8 @@ Double-check your coding agent with web chat or local models.
 
 Core flows:
   1. Double Check current Git changes
-     givi prepare --repo /path/to/repo --goal "Find concrete bugs and regression cases"
-     givi send --repo /path/to/repo --send chatgpt-web --mode auto --background
+     givi setup --repo /path/to/repo --provider claude-web --non-interactive
+     givi review --repo /path/to/repo --goal "Find concrete bugs and regression cases"
      # Ask your agent to verify the saved findings before applying changes.
 
   2. Review selected code through an existing web chat session
@@ -1962,13 +1998,21 @@ The browser adapter is experimental. See docs/costs-and-access.md.
 Commands:
   setup     Guided prerequisites, provider/login, MCP snippet and opt-in public demo.
             --provider NAME --non-interactive [--login|--check|--demo] [--model NAME]
+            Saves project defaults. --background (default) or --foreground.
+  review    Prepare and send using saved preferences (ChatGPT if unconfigured).
+            Git changes by default; --file/--question for selected context.
+  status    Show the latest run and next action, without opening Chrome. --json for tools.
+  open      Explicitly open the selected web run's profile for login/setup; sends nothing.
+  resume    Continue only a needs-attention run proven unsent and unchanged.
+            --foreground permits visible setup/uploads. Never resends an uncertain request.
+  cancel    Cooperatively cancel an active review. Does not retract a submitted prompt.
   findings  add --title TEXT --claim TEXT [--file PATH] (repeat --file for contracts/tests)
             update --id ID --status confirmed|dismissed|unverified --reason TEXT --evidence TEXT
             list [--json]; all accept --repo PATH and --run-id ID.
             Confirmed/dismissed require source files, reason and evidence; tests are not executed.
   recheck   --finding-id ID [--run-id ID] [--file PATH]: prepare current context, no sending.
   prepare   Create a review package from local git diff and untracked files.
-  ask       Create an advisory request, optionally attaching local files with --file.
+  ask       Create an advisory request; sends only with explicit --send, even after setup.
   archive   Create a source-context zip and manifest, optionally sending them to ChatGPT web.
   send      Send a prepared request to the selected web/local provider (latest or --run-id).
   copy      Copy a prepared provider prompt to the clipboard (latest or --run-id).
@@ -1999,9 +2043,11 @@ Important options:
   --reasoning off|on|low|medium|high
                             Local reasoning control; model/runtime must support the value.
   --mode prefill|submit|auto
-                            prefill only fills the prompt; submit sends it; auto waits and saves the answer.
+                            auto (default) waits and saves the answer; prefill only fills; submit sends.
   --headless                Diagnostic option; currently blocked by ChatGPT verification. Use --background.
-  --background              Start Chrome minimized without activation; setup/uploads may show it. Requires auto; incompatible with --headless.
+  --background              Default for auto: start minimized, pause if human attention is needed.
+                            Requires auto; incompatible with --headless. OS focus behavior can vary.
+  --foreground              Explicit visible browser for setup, verification and ZIP uploads.
   --verification-wait-ms N  Wait for your verification tap (default 180000 headed, 0 headless; maximum 900000).
   --browser-profile PATH    Dedicated Chrome profile shared by browser login and send.
   --navigation-timeout-ms N

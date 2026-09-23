@@ -41,15 +41,16 @@ export function diagnoseBrowser(profile = browserProfilePath()) {
 }
 
 /** Access probe only: never fill a composer, submit, or read conversation text. */
-export async function checkBrowserAccess(profile: string | undefined = undefined, headless = false, timeoutMs = 30_000, verificationWait?: number, provider: WebProvider = "chatgpt-web") {
+export async function checkBrowserAccess(profile: string | undefined = undefined, headless = false, timeoutMs = 30_000, verificationWait?: number, provider: WebProvider = "chatgpt-web", background = !headless) {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60_000) {
     throw new Error("Browser check timeout must be an integer from 1 to 60000 ms.");
   }
   profile ??= browserProfilePath(provider);
   const config = WEB_CONFIG[provider];
-  const verificationWaitMs = verificationTimeout(verificationWait, headless);
+  const requestedWait = verificationTimeout(verificationWait, headless);
+  const verificationWaitMs = background ? 0 : requestedWait;
   const report = {
-    provider, checkedAt: new Date().toISOString(), profile: path.resolve(profile), headless, transport: headless ? "playwright" : "native-cdp",
+    provider, checkedAt: new Date().toISOString(), profile: path.resolve(profile), headless, background, transport: headless ? "playwright" : "native-cdp",
     ready: false, submitted: false, sessionCookieReadable: provider === "chatgpt-web" ? false : null as boolean | null,
     authentication: "unknown", errorCode: undefined as string | undefined,
     verificationRequired: false, verificationCompleted: false,
@@ -58,7 +59,7 @@ export async function checkBrowserAccess(profile: string | undefined = undefined
   };
   let context: Awaited<ReturnType<typeof launchChatBrowser>> | undefined;
   try {
-    context = await launchChatBrowser(report.profile, headless);
+    context = await launchChatBrowser(report.profile, headless, background);
     if (provider === "chatgpt-web") report.sessionCookieReadable = (await context.cookies(config.url)).some(cookie => cookie.name.includes("session-token"));
     const page = context.pages()[0] ?? await context.newPage();
     await navigateToChat(page, config.url, timeoutMs, verificationWaitMs, async () => {
@@ -67,7 +68,9 @@ export async function checkBrowserAccess(profile: string | undefined = undefined
       console.error(`GiviLoop: complete the browser verification in Chrome. Waiting up to ${Math.ceil(verificationWaitMs / 1000)} seconds; this check sends no prompt.`);
     }, provider);
     report.verificationCompleted = report.verificationRequired;
-    await waitForChatInput(page, timeoutMs, provider);
+    await waitForChatInput(page, timeoutMs, provider, async () => {
+      if (background) throw new BrowserRunError("BROWSER_SETUP_REQUIRED", "Finish the website's initial cookie choice with givi browser login, close Chrome, then retry the check. Quiet checks do not restore the window.");
+    });
     const loginVisible = await page.getByRole("button", { name: /^(Log in|Sign in|Accedi)$/i }).first().isVisible();
     report.ready = true;
     report.authentication = loginVisible ? "anonymous" : report.sessionCookieReadable ? "session available" : "unknown";
@@ -93,6 +96,7 @@ export async function openLoginBrowser(profile: string | undefined = undefined, 
   if (!executable) throw new Error("Google Chrome was not found. Install it or set GIVILOOP_CHROME_PATH to its executable.");
   const resolved = path.resolve(profile);
   mkdirSync(resolved, { recursive: true });
+  if (profileOwnerPid(resolved)) throw new Error("This profile is already open. Close its Chrome, or ask your MCP agent to call givi_release_browser_sessions (idle expiry: 60 seconds), before opening login. No new window was opened.");
   const chromeArgs = [
     `--user-data-dir=${resolved}`, "--no-first-run", "--no-default-browser-check",
     "--new-window", "--start-maximized", WEB_CONFIG[provider].url,

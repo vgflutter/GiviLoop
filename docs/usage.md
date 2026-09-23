@@ -11,7 +11,7 @@ From a checkout, run `npm ci` and `npm run build`. Examples below use `npm run g
 To install a locally built archive:
 
 ```sh
-npm install -g /path/to/giviloop-0.5.0.tgz
+npm install -g /path/to/giviloop-0.6.0.tgz
 ```
 
 The package exposes `givi` and `givi-mcp`. Node.js 20+ is required; use Git for diff/archive flows, `zip` for archives, and a separately installed runtime with compatible weights for local inference. Clipboard flows use macOS/Windows system utilities, or `wl-clipboard`/`xclip` on Linux. Google Chrome is only needed for web automation.
@@ -54,7 +54,7 @@ Only loopback endpoints are accepted (`--base-url` / MCP `baseUrl`). The HTTP cl
 
 See [llama.cpp, LM Studio and MLX setup](local-engines.md), [Ollama setup and limits](ollama.md), [DwarfStar setup and hardware requirements](dwarfstar.md), and [measured validation](local-inference-validation-2026-09-21.md).
 
-For browser access, `givi browser check --provider NAME-web` inspects the dedicated profile without sending a prompt. Visible reviews wait for human verification and resume the same request; background mode temporarily shows the window. `--verification-wait-ms` controls the wait. Repeated challenges stop explicitly, and the website can require verification again even with saved cookies. See [browser verification](troubleshooting.md#human-verification-and-repeated-challenges).
+For browser access, `givi browser check --provider NAME-web` inspects the dedicated profile without sending a prompt. Explicitly visible reviews wait for human verification and continue the same request; quiet mode returns an attention state without showing the window. `--verification-wait-ms` controls the wait. Repeated challenges stop explicitly, and the website can require verification again even with saved cookies. See [browser verification](troubleshooting.md#human-verification-and-repeated-challenges).
 
 ## IDE Prompts
 
@@ -100,7 +100,7 @@ Optional ChatGPT source-archive review:
       --repo /path/to/repo \
       --goal "Review the current implementation" \
       --send chatgpt-web \
-      --mode auto --background \
+      --mode auto --foreground \
       --no-untracked
 
 This creates a small source zip from tracked Git files, embeds the manifest in the prompt, uploads the zip to ChatGPT web, sends the request, and saves the answer.
@@ -116,7 +116,7 @@ Double Check of current Git changes:
 
 ### Run Automatically in the Background
 
-Use `--background` for a standard Chrome session with its window minimized:
+Auto reviews use a minimized standard Chrome by default. `--background` also overrides a saved foreground preference:
 
     npm run givi -- ask --repo /path/to/repo --file server.js \
       --question "Review this code and suggest minimal fixes" \
@@ -126,9 +126,11 @@ For an existing request:
 
     npm run givi -- send --repo /path/to/repo --mode auto --background
 
-Visible sessions use native Chrome with a temporary loopback DevTools connection and the existing dedicated profile. GiviLoop waits for the browser process to exit on completion or cancellation. This startup path resolved the observed 403 in real authenticated CLI/MCP trials; see the [validation](chatgpt-403-resolution-2026-09-21.md).
+Visible sessions use native Chrome with a temporary loopback DevTools connection and the existing dedicated profile. One-shot CLI runs wait for the owned browser process to exit on completion or cancellation; MCP can retain an idle healthy browser. This startup path resolved the observed 403 in real authenticated CLI/MCP trials; see the [validation](chatgpt-403-resolution-2026-09-21.md).
 
-When provider access is available, the exchange is automatic: fill the prompt, attach files when present, send once, wait for a completed response, save it, and close Chrome. No clipboard interaction is required. Chrome starts without a startup window; its review target is created directly in the background, minimized. ZIP uploads temporarily show Chrome so its attachment controls can initialize; GiviLoop minimizes it again before sending. Text-only reviews do not require this upload step. If the site requires human verification, GiviLoop restores the window and waits for your action before proceeding. GiviLoop checks that minimization succeeded and stops if the environment does not support it.
+When provider access is available, auto mode fills the prompt, sends once, waits for a completed answer and saves it. No clipboard interaction is required. This is now the default delivery mode. Chrome starts without a startup window; its review target is created minimized in the background. Quiet mode pauses for login, cookie choices, human verification and ZIP uploads instead of deliberately showing Chrome. Use `givi status`, `givi open`, quit Chrome after setup, then `givi resume`. ZIP uploads require explicit `--foreground`. The OS may still cause a transient focus change during input; GiviLoop verifies minimization and stops if unsupported.
+
+CLI closes Chrome on completion. MCP retains healthy quiet sessions for up to 60 seconds idle, at most two dedicated profiles, and starts each review in a fresh conversation. It closes failed/cancelled sessions and closes retained sessions on disconnect. `givi_release_browser_sessions` closes idle sessions before manual login. Concurrent use of the same profile is refused.
 
 For MCP, pass `background: true` and `mode: "auto"` to `givi_send_to_web_llm`, `givi_send_to_chatgpt_web`, or `givi_ask_web_llm`. For example:
 
@@ -141,7 +143,7 @@ Both modes reuse the dedicated profile. Use `--browser-profile PATH` / MCP `brow
 
 For longer tasks, `--max-wait-ms N` / MCP `maxWaitMs` sets the response timeout (default 180000). `--navigation-timeout-ms N` / MCP `navigationTimeoutMs` sets each navigation attempt (default 20000); only failures before submission may receive one navigation retry. `--response-stable-ms N` / MCP `responseStableMs` controls the final text stability interval (default 5000).
 
-Human verification has a separate `--verification-wait-ms N` / MCP `verificationWaitMs` budget (default 180000 visible, 0 headless). Configure the MCP caller's own request timeout to cover verification plus generation; cancellation stops the pending run instead of continuing a hidden request.
+Human verification has a separate `--verification-wait-ms N` / MCP `verificationWaitMs` budget (default 180000 explicitly visible, always 0 quiet/headless). Configure the MCP caller's own request timeout to cover verification plus generation; cancellation stops the pending run instead of continuing a hidden request.
 
 A timeout never saves an unconfirmed partial response as a completed review. After an uncertain send or response timeout, inspect the conversation before explicitly retrying: GiviLoop does not send the prompt again automatically.
 
@@ -297,4 +299,4 @@ You are responsible for deciding what can be shared externally. GiviLoop helps p
 
 ## Guided setup and finding evidence
 
-Use `givi setup` for prerequisites, provider choices and an MCP snippet. `givi findings add|update|list` records assessments and evidence; `givi recheck` prepares fresh context for one finding. MCP exposes `givi_record_finding`, `givi_list_findings` and `givi_prepare_recheck`. See the [complete setup and evidence guide](setup-and-evidence.md) for commands and limitations.
+Use `givi setup` for prerequisites, saved provider/preferences and an MCP snippet. `givi review` prepares and sends using those defaults; `givi ask` and `givi prepare` remain prepare-only unless sending is explicit. `givi status`, `open`, `resume` and `cancel` control attention and active reviews. `givi findings add|update|list` records assessments and evidence; `givi recheck` prepares fresh context for one finding. MCP exposes `givi_record_finding`, `givi_list_findings` and `givi_prepare_recheck`. See the [complete setup and evidence guide](setup-and-evidence.md) for commands and limitations.

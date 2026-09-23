@@ -10,6 +10,9 @@ import path from "node:path";
 import { assertChatOrigin, atomicWrite, BrowserRunError, browserProfilePath, chatInput, launchChatBrowser, minimizeBrowser, navigateToChat, pageBlocker, showBrowser, verificationTimeout, waitForChatInput } from "./browser-runtime.js";
 import { assertRepositoryAllowedForExternalTransfer } from "./external-transfer.js";
 import { acquireRunLock } from "../run-lock.js";
+import { runControl } from "../run-control.js";
+import { assertResumable } from "../resume-guard.js";
+import { browserSessions } from "./browser-sessions.js";
 
 export type ChatGptWebMode = "prefill" | "submit" | "auto";
 export type ChatGptModelSelection = "prefer" | "require";
@@ -32,6 +35,8 @@ export type ChatGptWebOptions = {
   navigationTimeoutMs?: number;
   verificationWaitMs?: number;
   signal?: AbortSignal;
+  resumeOnly?: boolean;
+  reuseBrowser?: boolean;
 };
 
 export type ChatGptWebResult = {
@@ -78,11 +83,12 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
       "external-review-response.md",
     );
 
-  const mode = options.mode ?? "prefill";
+  const mode = options.mode ?? "auto";
   const headless = options.headless ?? false;
-  const background = options.background ?? false;
+  const background = options.background ?? (mode === "auto" && !headless);
   const providerUrl = options.chatGptUrl ?? config.url;
-  const verificationWaitMs = verificationTimeout(options.verificationWaitMs, headless);
+  const requestedVerificationWait = verificationTimeout(options.verificationWaitMs, headless);
+  const verificationWaitMs = background ? 0 : requestedVerificationWait;
 
   if (headless && mode !== "auto") {
     throw new Error(
@@ -115,6 +121,10 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
 
   const userDataDir = path.resolve(options.userDataDir ?? browserProfilePath(provider));
   const statusPath = path.join(path.dirname(responsePath), "browser-status.json");
+  const release = acquireRunLock(path.dirname(responsePath), provider);
+  try { if (options.resumeOnly) assertResumable(statusPath, createHash("sha256").update(requestText).digest("hex")); }
+  catch (error) { release(); throw error; }
+  const control = runControl(path.dirname(responsePath), options.signal);
   const status = {
     startedAt: new Date().toISOString(), endedAt: undefined as string | undefined,
     provider, mode, headless, background, transport: headless ? "playwright" : "native-cdp", profile: userDataDir,
@@ -122,33 +132,42 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
     phase: "launching", outcome: "running", submitted: false as boolean | "unknown",
     errorCode: undefined as string | undefined,
     verificationRequired: false, verificationCompleted: false,
+    ownerPid: process.pid, controlToken: control.token,
+    model: options.model, modelSelection: options.modelSelection,
+    attachmentPaths, attention: undefined as string | undefined,
+    sessionReused: false,
   };
   function record(phase: string): void {
     status.phase = phase;
     atomicWrite(statusPath, JSON.stringify(status, null, 2) + "\n");
   }
-  const release = acquireRunLock(path.dirname(responsePath), provider);
   let context: BrowserContext | undefined;
   let keepOpen = false;
   let operationFailed = false;
   let closePromise: Promise<void> | undefined;
+  let lease: Awaited<ReturnType<typeof browserSessions.acquire>> | undefined;
+  let healthySession = false;
   const cancelledError = () => new BrowserRunError("BROWSER_CANCELLED", "The browser review was cancelled. Its browser context was closed; no new response was saved. Check the run's submitted status before retrying.");
   function checkCancelled(): void {
-    if (options.signal?.aborted) throw cancelledError();
+    if (control.signal.aborted) throw cancelledError();
   }
   function closeContext(): Promise<void> {
     if (!context) return Promise.resolve();
     const ownedContext = context;
-    return closePromise ??= Promise.resolve().then(() => ownedContext.close());
+    return closePromise ??= Promise.resolve().then(() => lease ? lease.release(healthySession && !control.signal.aborted) : ownedContext.close());
   }
   // Closing this run's context interrupts Playwright waits without touching any
   // other browser. A cancellation during launch is checked as soon as it returns.
   const cancel = () => { void closeContext().catch(() => {}); };
-  options.signal?.addEventListener("abort", cancel, { once: true });
+  control.signal.addEventListener("abort", cancel, { once: true });
   try {
     record("launching");
     checkCancelled();
-    context = await launchChatBrowser(userDataDir, headless, background);
+    if (background && attachmentPaths.length) throw new BrowserRunError("BROWSER_INTERACTION_REQUIRED", "File upload needs an explicitly visible session. Use givi resume --foreground for this run. No prompt was sent and no browser opened.");
+    if (options.reuseBrowser && background && !headless && mode === "auto") {
+      lease = await browserSessions.acquire(userDataDir);
+      context = lease.context; status.sessionReused = lease.reused;
+    } else context = await launchChatBrowser(userDataDir, headless, background);
     checkCancelled();
     const page = await createFreshPage(context);
     if (background) await minimizeBrowser(context, page);
@@ -166,13 +185,13 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
       if (background) await minimizeBrowser(context, page);
     }
     record("waiting-for-input");
-    await waitForChatInput(page, 15_000, provider, async () => {
+    const beforeCookieChoice = async () => {
       if (background) {
-        console.error("GiviLoop: showing Chrome for the website's initial cookie choice; it will minimize again before sending.");
-        await showBrowser(context!, page);
+        throw new BrowserRunError("BROWSER_SETUP_REQUIRED", "The website needs its initial cookie choice. Run givi open, finish setup and close Chrome, then givi resume. No prompt was sent.");
       }
-    });
-    // Every provider can temporarily restore the window for initial setup.
+    };
+    await waitForChatInput(page, 15_000, provider, beforeCookieChoice);
+    // Some desktop window managers restore minimized windows during input.
     if (background) await minimizeBrowser(context, page);
     checkCancelled();
     assertChatOrigin(page, providerUrl);
@@ -183,16 +202,11 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
           modelSelection: options.modelSelection ?? "prefer",
         })
       : undefined;
-    if (options.model) await waitForChatInput(page, 15_000, provider);
+    if (options.model) await waitForChatInput(page, 15_000, provider, beforeCookieChoice);
     checkCancelled();
     if (attachmentPaths.length > 0) {
       record("uploading");
-      if (background) {
-        console.error("GiviLoop: showing Chrome for file upload; it will minimize again before sending.");
-        await showBrowser(context, page);
-      }
       await uploadAttachments(page, attachmentPaths, providerUrl);
-      if (background) await minimizeBrowser(context, page);
     }
     record("filling");
     checkCancelled();
@@ -246,6 +260,11 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
     checkCancelled();
     // Finish interruptible cleanup before committing the response. A cancel
     // received while Chrome is closing must still preserve any prior response.
+    if (lease) {
+      await page.goto("about:blank", { waitUntil: "domcontentloaded", timeout: 5000 });
+      await minimizeBrowser(context, page);
+      healthySession = true;
+    }
     await closeContext();
     checkCancelled();
     atomicWrite(responsePath, responseText);
@@ -255,15 +274,20 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
     return { mode, requestPath, attachmentPaths, responsePath, responseText, modelSelectionWarning };
   } catch (error) {
     operationFailed = true;
-    const failure = options.signal?.aborted ? cancelledError() : error;
+    const failure = control.signal.aborted ? cancelledError() : error;
     status.outcome = "failed";
     status.endedAt = new Date().toISOString();
     status.errorCode = failure instanceof BrowserRunError ? failure.code : "BROWSER_OPERATION_FAILED";
+    if (status.submitted === false && ["ACCESS_CHALLENGE", "ACCESS_CHALLENGE_LOOP", "ACCESS_DENIED", "LOGIN_REQUIRED", "BROWSER_SETUP_REQUIRED", "BROWSER_INTERACTION_REQUIRED"].includes(status.errorCode)) {
+      status.outcome = "needs-attention";
+      status.attention = "Use givi status to inspect this run. Use givi open to finish login/setup, close that Chrome, then givi resume. For an upload, resume --foreground. Automatic review did not bring Chrome forward.";
+    }
     if (status.errorCode === "ACCESS_CHALLENGE" || status.errorCode === "ACCESS_CHALLENGE_LOOP") status.verificationRequired = true;
     try { record(status.phase); } catch { /* Preserve the operation's original error. */ }
     throw failure;
   } finally {
-    options.signal?.removeEventListener("abort", cancel);
+    control.signal.removeEventListener("abort", cancel);
+    control.dispose();
     try {
       if (context && !keepOpen) {
         try { await closeContext(); }

@@ -1,6 +1,6 @@
 # Product direction
 
-Updated for 0.5.0, 23 September 2026. **Now implemented:** guided setup, structured finding decisions with evidence/history and file hashes, stale detection, and preparation of a targeted recheck linked to its parent. The host agent still verifies findings; GiviLoop does not execute/certify tests or automatically mark fixes resolved. [Current commands](setup-and-evidence.md). Remaining proposals below are not release commitments.
+Updated for 0.6.0, 23 September 2026. **Now implemented:** quiet browser defaults, saved project preferences, one-command `review`, status/open/resume/cancel, bounded MCP browser reuse, guided setup, structured finding decisions with evidence/history and file hashes, stale detection, and preparation of a targeted recheck linked to its parent. The host agent still verifies findings; GiviLoop does not execute/certify tests or automatically mark fixes resolved. [Current commands](setup-and-evidence.md). Remaining proposals below are not release commitments.
 
 ## Focus
 
@@ -40,7 +40,7 @@ Rechecking changed context and returning a compact verified report are plausible
 
 An optional later workflow could start with a local reviewer and escalate selected uncertain findings to another explicitly configured provider. Routing should follow an agreed budget and data-sharing policy; GiviLoop should not silently send code to a remote service.
 
-## First adoption cycle after 0.5.0
+## First adoption cycle after 0.6.0
 
 The initial audience is developers who already use a coding agent and ask for a second opinion. The positioning is **a second review with a reviewer you choose, followed by evidence**, plus avoiding a separate API review charge when existing chat access is available. Do not sell unmeasured total-token savings or unrestricted website automation.
 

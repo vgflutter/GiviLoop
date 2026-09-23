@@ -152,7 +152,7 @@ export async function navigateToChat(page: Page, url: string, timeoutMs: number,
     }
   };
   async function waitForVerification(): Promise<void> {
-    if (verificationWaitMs === 0) throw new BrowserRunError("ACCESS_CHALLENGE", "The site requires browser verification. The saved login may still be valid. No prompt was sent. Run givi browser check without --headless to complete the verification.");
+    if (verificationWaitMs === 0) throw new BrowserRunError("ACCESS_CHALLENGE", `The site requires browser verification. No prompt was sent. Run givi browser login --provider ${provider}, complete verification and close Chrome, then use givi resume for the paused run. Quiet checks never open an interactive window.`);
     await onVerificationRequired?.();
     const deadline = Date.now() + verificationWaitMs;
     while (Date.now() < deadline) {

@@ -24,9 +24,10 @@ function parse(args: string[], values: string[], flags: string[], repeats: strin
 }
 
 export async function setupCommand(args: string[]) {
-  const p = parse(args, ["--repo", "--provider", "--model", "--base-url", "--browser-profile"], ["--non-interactive", "--check", "--login", "--demo"]);
+  const p = parse(args, ["--repo", "--provider", "--model", "--base-url", "--browser-profile"], ["--non-interactive", "--check", "--login", "--demo", "--foreground", "--background"]);
+  if (p.has("--foreground") && p.has("--background")) throw new Error("Choose either --foreground or --background.");
   if (p.positional.length) throw new Error("Usage: givi setup [--provider NAME] [--non-interactive] [--login|--check|--demo]");
-  const result = await setup({ repositoryPath: p.get("--repo") ?? process.cwd(), provider: p.get("--provider"), model: p.get("--model"), baseUrl: p.get("--base-url"), browserProfile: p.get("--browser-profile"), nonInteractive: p.has("--non-interactive"), check: p.has("--check"), login: p.has("--login"), demo: p.has("--demo") });
+  const result = await setup({ repositoryPath: p.get("--repo") ?? process.cwd(), provider: p.get("--provider"), model: p.get("--model"), baseUrl: p.get("--base-url"), browserProfile: p.get("--browser-profile"), foreground: p.has("--foreground") ? true : p.has("--background") ? false : undefined, nonInteractive: p.has("--non-interactive"), check: p.has("--check"), login: p.has("--login"), demo: p.has("--demo") });
   if (!p.has("--non-interactive") && process.stdin.isTTY && process.stdout.isTTY) {
     console.log(`\nGiviLoop setup — ${result.provider}\nPrerequisites: ${result.prerequisitesReady ? "available" : "missing; see report"}`);
     console.log(`\n${result.instructions}\n\n${JSON.stringify(result.mcpConfig, null, 2)}`);

@@ -19,6 +19,9 @@ import { pruneCompletedRuns, RUN_ID_PATTERN } from "./run-storage.js";
 import { VERSION } from "./version.js";
 import { evidenceTools } from "./workflow-commands.js";
 import { recordFinding, readFindings, prepareRecheck } from "./review-evidence.js";
+import { webDefaults, readPreferences } from "./preferences.js";
+import { runStatus, cancelRun, openRun, resumeRun } from "./run-status.js";
+import { browserSessions } from "./providers/browser-sessions.js";
 import { probeLocalProvider, readLocalProvider, readLocalReasoning, sendLocalReview, type LocalRunOptions } from "./providers/local-review.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -163,6 +166,11 @@ const server = new Server(
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
+      { name: "givi_release_browser_sessions", description: "Close idle Chrome sessions owned by this MCP server before manual login or changing providers. Active reviews are left running. Idle sessions otherwise expire after 60 seconds.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
+      ...["status", "cancel", "open", "resume"].map(action => ({ name: `givi_${action}`, description: action === "status" ? "Read saved review state without opening a browser. Reports attention, submission, cancellation and safe-resume availability."
+        : action === "cancel" ? "Request cooperative cancellation of the selected active review. Does not signal arbitrary OS processes or retract a submitted prompt."
+        : action === "open" ? "Only on explicit user request: show the dedicated browser for login/setup. Sends no prompt. User must close it before resume."
+        : "Resume only a needs-attention review whose prompt was never submitted and whose request is unchanged. Never resends completed, uncertain or failed sends. Explicit foreground=true permits a visible session for uploads/verification.", inputSchema: { type: "object" as const, properties: { repositoryPath: { type: "string" }, runId: { type: "string" }, ...(action === "resume" ? { foreground: { type: "boolean" } } : {}) }, required: ["repositoryPath"], additionalProperties: false } })),
       ...evidenceTools,
       {
         name: TOOL_ASK_LOCAL,
@@ -213,7 +221,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               enum: [...TARGET_PROVIDERS],
               description:
                 "External reviewer provider. Use chatgpt-chat by default.",
-              default: "chatgpt-chat",
             },
             copyPromptToClipboard: {
               type: "boolean",
@@ -269,7 +276,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               enum: [...TARGET_PROVIDERS],
               description:
                 "External reviewer provider. Use chatgpt-chat by default.",
-              default: "chatgpt-chat",
             },
             copyPromptToClipboard: {
               type: "boolean",
@@ -310,14 +316,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               enum: [...WEB_PROVIDERS],
               description:
                 "Browser provider, no API key. Gemini anonymous and DeepSeek/Claude signed-in text reviews are live-validated. Review accuracy varies; verify findings before applying changes. New adapters are experimental, text-only, using the website current/default model.",
-              default: "chatgpt-web",
             },
             mode: {
               type: "string",
               enum: ["prefill", "submit", "auto"],
               description:
                 "prefill opens the web UI and fills the prompt, submit also sends it, auto waits for the response and saves it when supported.",
-              default: "prefill",
+              default: "auto",
             },
             headless: {
               type: "boolean",
@@ -326,14 +331,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               default: false,
             },
             background: {
-              type: "boolean", default: false,
-              description: "Start standard Chrome in a background, minimized window; setup, verification or file uploads may show it. Requires mode=auto and headless=false.",
+              type: "boolean",
+              description: "Defaults true for auto mode: start minimized and pause for attention without deliberately showing Chrome. Set false explicitly for visible login/verification/uploads. Requires mode=auto and headless=false. MCP reuses healthy sessions for up to 60 seconds.",
             },
             browserProfile: {
               type: "string",
               description: "Dedicated Chrome profile path. Close its login browser before sending.",
             },
-            verificationWaitMs: { type: "integer", minimum: 0, maximum: 900000, description: "Wait for user browser verification; default 180000 headed and 0 headless. Background temporarily shows the window." },
+            verificationWaitMs: { type: "integer", minimum: 0, maximum: 900000, description: "Visible mode only: wait for verification (default 180000 ms). Quiet/background and headless never wait or show a window; they return needs-attention." },
             navigationTimeoutMs: {
               type: "number", exclusiveMinimum: 0,
               description: "Timeout per initial navigation attempt in milliseconds. At most two attempts before sending.",
@@ -391,7 +396,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               enum: ["prefill", "submit", "auto"],
               description:
                 "prefill opens ChatGPT and fills the prompt, submit also sends it, auto waits for the response and saves it.",
-              default: "prefill",
+              default: "auto",
             },
             headless: {
               type: "boolean",
@@ -400,14 +405,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               default: false,
             },
             background: {
-              type: "boolean", default: false,
-              description: "Start standard Chrome in a background, minimized window; setup, verification or file uploads may show it. Requires mode=auto and headless=false.",
+              type: "boolean",
+              description: "Defaults true for auto mode: start minimized and pause for attention without deliberately showing Chrome. Set false explicitly for visible login/verification/uploads. Requires mode=auto and headless=false. MCP reuses healthy sessions for up to 60 seconds.",
             },
             browserProfile: {
               type: "string",
               description: "Dedicated Chrome profile path. Close its login browser before sending.",
             },
-            verificationWaitMs: { type: "integer", minimum: 0, maximum: 900000, description: "Wait for user browser verification; default 180000 headed and 0 headless. Background temporarily shows the window." },
+            verificationWaitMs: { type: "integer", minimum: 0, maximum: 900000, description: "Visible mode only: wait for verification (default 180000 ms). Quiet/background and headless never wait or show a window; they return needs-attention." },
             navigationTimeoutMs: {
               type: "number", exclusiveMinimum: 0,
               description: "Timeout per initial navigation attempt in milliseconds. At most two attempts before sending.",
@@ -516,7 +521,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               enum: [...WEB_PROVIDERS],
               description:
                 "Browser provider, no API key. Gemini anonymous and DeepSeek/Claude signed-in text reviews are live-validated. Review accuracy varies; verify findings before applying changes. New adapters are experimental, text-only, using the website current/default model.",
-              default: "chatgpt-web",
             },
             mode: {
               type: "string",
@@ -532,14 +536,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               default: false,
             },
             background: {
-              type: "boolean", default: false,
-              description: "Start standard Chrome in a background, minimized window; setup, verification or file uploads may show it. Requires mode=auto and headless=false.",
+              type: "boolean",
+              description: "Defaults true for auto mode: start minimized and pause for attention without deliberately showing Chrome. Set false explicitly for visible login/verification/uploads. Requires mode=auto and headless=false. MCP reuses healthy sessions for up to 60 seconds.",
             },
             browserProfile: {
               type: "string",
               description: "Dedicated Chrome profile path. Close its login browser before sending.",
             },
-            verificationWaitMs: { type: "integer", minimum: 0, maximum: 900000, description: "Wait for user browser verification; default 180000 headed and 0 headless. Background temporarily shows the window." },
+            verificationWaitMs: { type: "integer", minimum: 0, maximum: 900000, description: "Visible mode only: wait for verification (default 180000 ms). Quiet/background and headless never wait or show a window; they return needs-attention." },
             navigationTimeoutMs: {
               type: "number", exclusiveMinimum: 0,
               description: "Timeout per initial navigation attempt in milliseconds. At most two attempts before sending.",
@@ -581,6 +585,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   const toolName = request.params.name;
+  if (toolName === "givi_release_browser_sessions") return { content: [{ type: "text", text: JSON.stringify(await browserSessions.closeIdle()) }] };
+  if (["givi_status", "givi_cancel", "givi_open", "givi_resume"].includes(toolName)) {
+    const input = readObject(request.params.arguments);
+    const repository = readRequiredString(input, "repositoryPath"), id = readOptionalRunId(input, "runId");
+    const result = toolName === "givi_status" ? runStatus(repository, id)
+      : toolName === "givi_cancel" ? cancelRun(repository, id)
+      : toolName === "givi_open" ? await openRun(repository, id)
+      : await resumeRun(repository, id, readOptionalBoolean(input, "foreground"), extra.signal);
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  }
 
   if (evidenceTools.some(tool => tool.name === toolName)) {
     const input = readObject(request.params.arguments);
@@ -686,7 +700,7 @@ function localReviewSchema(ask: boolean) {
         maxTotalPackageBytes: { type: "integer", minimum: 1 },
       } : { runId: { type: "string", description: "Optional prepared run id; defaults to latest." } }),
     },
-    required: ["repositoryPath", "provider", "model", ...(ask ? ["question"] : [])],
+    required: ["repositoryPath", ...(ask ? ["question"] : [])],
     additionalProperties: false,
   };
 }
@@ -699,10 +713,12 @@ async function runLocalTool(value: unknown, ask: boolean, signal?: AbortSignal) 
   }
   const repositoryPath = path.resolve(readRequiredString(input, "repositoryPath"));
   if (!existsSync(repositoryPath) || !statSync(repositoryPath).isDirectory()) throw new Error(`Repository path does not exist: ${repositoryPath}`);
-  const provider = readLocalProvider(readRequiredString(input, "provider"));
-  const model = readRequiredString(input, "model");
+  const preferences = readPreferences(repositoryPath);
+  const provider = readLocalProvider(readOptionalString(input, "provider") ?? preferences?.provider ?? "ollama");
+  const model = readOptionalString(input, "model") ?? (preferences?.provider === provider ? preferences.model : undefined);
+  if (!model) throw new Error("Select a model explicitly or save it with givi setup --provider NAME --model NAME.");
   const options: Omit<LocalRunOptions, "requestPath" | "responsePath"> = {
-    provider, model, signal, baseUrl: readOptionalString(input, "baseUrl"),
+    provider, model, signal, baseUrl: readOptionalString(input, "baseUrl") ?? (preferences?.provider === provider ? preferences.baseUrl : undefined),
     timeoutMs: readOptionalPositiveNumber(input, "maxWaitMs"),
     maxOutputTokens: readOptionalPositiveNumber(input, "maxOutputTokens"),
     contextTokens: readOptionalPositiveNumber(input, "contextTokens"),
@@ -772,6 +788,10 @@ function buildHelpToolResponse(): {
           "",
           "Recommended IDE-agent flows:",
           "- Onboarding: run givi setup in a terminal for prerequisites, provider/login, an MCP snippet and an optional public demo.",
+          "- Setup saves per-project provider/model/profile preferences. Explicit tool arguments override them; preparing context still never sends it.",
+          "- Auto web reviews default to a minimized browser. Human attention pauses the run: inspect givi_status, use givi_open only at the user's request, finish setup and quit Chrome, then givi_resume. Uploads require foreground=true on resume.",
+          "- givi_cancel requests cooperative cancellation, without retracting submitted prompts. Resume refuses submitted, uncertain or changed requests.",
+          "- Healthy background sessions are reused within this MCP process, with separate chats, up to two profiles and 60 seconds idle. givi_release_browser_sessions closes idle sessions before manual login; disconnect closes them too.",
           "- Evidence: after independent checks, use givi_record_finding with source/contract/test files, status, reason and evidence. Use givi_list_findings to see stale decisions. These tools record your assessment, not certified test results.",
           "- Recheck: givi_prepare_recheck creates a new request for one finding with current files; inspect and explicitly send its returned runId, then verify again.",
           "",
@@ -798,7 +818,7 @@ function buildHelpToolResponse(): {
           "- act: treat the external review as advisory, apply only sensible fixes, run checks, and report accepted/rejected suggestions.",
           "",
           "Console equivalents:",
-          "- Full source archive (optional): npm --prefix /path/to/GiviLoop run givi -- archive --repo /path/to/repo --goal \"Review the current implementation\" --send chatgpt-web --mode auto --background --no-untracked",
+          "- Full source archive (optional, visible upload): npm --prefix /path/to/GiviLoop run givi -- archive --repo /path/to/repo --goal \"Review the current implementation\" --send chatgpt-web --mode auto --foreground --no-untracked",
           "- Ask about one file: npm --prefix /path/to/GiviLoop run givi -- ask --repo /path/to/repo --file server.js --question \"Review this endpoint pattern\" --send chatgpt-web --mode auto",
           "- Prepare current changes: npm --prefix /path/to/GiviLoop run givi -- prepare --repo /path/to/repo --goal \"Review the current implementation\"",
           "- Send latest prepared request: npm --prefix /path/to/GiviLoop run givi -- send --repo /path/to/repo --mode auto",
@@ -950,7 +970,10 @@ async function askWebLlm(args: AskWebLlmArgs, signal?: AbortSignal): Promise<{
   reviewResponseMode: ExternalReviewHandling;
 }> {
   const repositoryPath = path.resolve(args.repositoryPath);
-  const webProvider = args.webProvider ?? "chatgpt-web";
+  const defaults = webDefaults(repositoryPath, args.webProvider);
+  args = { ...args, webProvider: defaults.provider, model: args.model ?? defaults.model, browserProfile: args.browserProfile ?? defaults.browserProfile,
+    background: args.background ?? (!args.headless && (args.mode ?? "auto") === "auto" ? defaults.background : false) };
+  const webProvider = defaults.provider;
 
   if (!existsSync(repositoryPath)) {
     throw new Error(`Repository path does not exist: ${repositoryPath}`);
@@ -998,6 +1021,7 @@ async function askWebLlm(args: AskWebLlmArgs, signal?: AbortSignal): Promise<{
     mode,
     headless: args.headless,
     background: args.background,
+    reuseBrowser: true,
     userDataDir: args.browserProfile,
     navigationTimeoutMs: args.navigationTimeoutMs,
     verificationWaitMs: args.verificationWaitMs,
@@ -1045,7 +1069,10 @@ async function sendPreparedReviewToWebLlm(
   reviewResponseMode: ExternalReviewHandling;
 }> {
   const repositoryPath = path.resolve(args.repositoryPath);
-  const webProvider = args.webProvider ?? "chatgpt-web";
+  const defaults = webDefaults(repositoryPath, args.webProvider);
+  args = { ...args, webProvider: defaults.provider, model: args.model ?? defaults.model, browserProfile: args.browserProfile ?? defaults.browserProfile,
+    background: args.background ?? (!args.headless && (args.mode ?? "auto") === "auto" ? defaults.background : false) };
+  const webProvider = defaults.provider;
 
   if (!existsSync(repositoryPath)) {
     throw new Error(`Repository path does not exist: ${repositoryPath}`);
@@ -1082,7 +1109,7 @@ async function sendPreparedReviewToWebLlm(
   const attachmentPaths = selectedRun
     ? readPreparedRunAttachmentPaths(selectedRun, metadata)
     : [];
-  const mode = args.mode ?? "prefill";
+  const mode = args.mode ?? "auto";
   const result = await sendToWebChat({
     webProvider,
     signal,
@@ -1093,6 +1120,7 @@ async function sendPreparedReviewToWebLlm(
     mode,
     headless: args.headless,
     background: args.background,
+    reuseBrowser: true,
     userDataDir: args.browserProfile,
     navigationTimeoutMs: args.navigationTimeoutMs,
     verificationWaitMs: args.verificationWaitMs,
@@ -2477,7 +2505,9 @@ function readTargetProvider(input: Record<string, unknown>): TargetProvider {
   const targetProviderRaw = readOptionalString(input, "targetProvider");
 
   if (!targetProviderRaw) {
-    return "chatgpt-chat";
+    const repository = readOptionalString(input, "repositoryPath");
+    const p = repository ? readPreferences(repository) : undefined;
+    return p && WEB_PROVIDERS.includes(p.provider as WebProvider) ? targetForWeb(p.provider as WebProvider) : "chatgpt-chat";
   }
 
   if (
@@ -2553,5 +2583,9 @@ function readExternalReviewHandling(
   );
 }
 
+server.onclose = () => { void browserSessions.closeAll(); };
 const transport = new StdioServerTransport();
 await server.connect(transport);
+// StdioServerTransport does not map stdin EOF to its close callback.
+// Close the protocol too, so pending requests receive cancellation on disconnect.
+process.stdin.once("end", () => { void server.close().finally(() => browserSessions.closeAll()); });

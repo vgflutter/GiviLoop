@@ -8,7 +8,7 @@ The examples below use an installed `givi`. In a source checkout, substitute `np
 givi setup --repo /path/to/project
 ```
 
-Choose a browser provider, a local runtime or manual transfer. Setup checks Node/Git and Chrome when relevant, then writes `.giviloop/mcp.json` and a setup report. Merge the generated MCP entry into your client's configuration and restart its server. Clients using another configuration format need the same `command` and `args`; this generic JSON is not a universal editor configuration file. Editor settings are never edited. Setup does not set a default provider for later review commands: keep using `--send` or the MCP provider argument.
+Choose a browser provider, a local runtime or manual transfer. Setup checks Node/Git and Chrome when relevant, then writes `.giviloop/mcp.json` and a setup report. Merge the generated MCP entry into your client's configuration and restart its server. Clients using another configuration format need the same `command` and `args`; this generic JSON is not a universal editor configuration file. Editor settings are never edited. Setup saves provider, model, local endpoint, dedicated profile and background preference in `.giviloop/preferences.json`. Explicit command/tool arguments override matching preferences; a different provider never inherits another provider's model or profile.
 
 The wizard asks before opening login, checking access or sending the bundled public example. Quit the dedicated Chrome after login, then rerun setup to continue. A web access check validates a composer, not a completed generation or provider authorization. Verification may recur. Web adapters remain experimental and subject to provider terms/quotas.
 
@@ -25,6 +25,34 @@ givi setup --provider claude-web --non-interactive --demo
 `--demo` explicitly sends **only the bundled public sum example**, in a separate `.giviloop/setup-demos/example-*` directory, and prints where the result was saved. It does not attach your project's source. Manual mode prepares the example without sending. Local demos require `--model`; `--check` lists models and accepts `--base-url`. Setup never installs or downloads a model. Use `--browser-profile PATH` for a custom dedicated web profile. Do not combine `--login` with `--check` or `--demo`. When a requested access check fails, setup skips the demo and returns a failure status.
 
 Add `.giviloop/` to the project's `.gitignore`. Setup reports and review records stay local; no telemetry is collected.
+
+## Saved defaults and quiet reviews
+
+```sh
+givi setup --provider claude-web --non-interactive --background
+givi review --goal "Find a concrete bug and regression tests"  # current Git changes
+givi review --file src/example.ts --question "Check this contract"  # selected file
+givi status
+```
+
+`review` explicitly prepares **and sends**. Without saved preferences it uses ChatGPT. `ask`, `prepare` and `archive` still only prepare unless `--send` is present. `send` uses the saved provider; a prepared destination mismatch fails before sending. Manual preference requires `prepare` / `copy` / `ingest`. `setup --foreground` saves visible mode; `setup --background` restores quiet mode. Local reviews use the saved runtime/model without a browser.
+
+Auto web reviews default to minimized Chrome. Login, verification, cookie choices and uploads pause as `needs-attention` **before submission**, without deliberately showing Chrome. The provider controls whether verification recurs. Quiet checks/reviews do not wait for human verification even if a longer verification timeout is supplied.
+
+```sh
+givi status --json
+givi open                  # explicitly open the paused run's profile; no submission
+# Complete login/setup and quit that dedicated Chrome normally.
+givi resume                # same request, only if proven unsent and unchanged
+# For an archive needing visible upload controls: givi resume --foreground
+givi cancel                # from another terminal while a review is active
+```
+
+All controls accept `--repo` and `--run-id`; otherwise they select the latest run. `status` never opens a browser. Cancellation is cooperative and does not retract a prompt. Resume refuses completed, cancelled, uncertain, already submitted or modified requests. A stale lock after a crashed worker requires inspection; it is not silently cleared. An earlier saved answer may remain available after a later failed attempt: inspect the current status, not just the existence of a response file.
+
+MCP exposes `givi_status`, `givi_open`, `givi_resume` (`foreground: true` for visible work), `givi_cancel` and `givi_release_browser_sessions`. Open the browser only when the user chooses to handle attention. Within one MCP process, healthy quiet sessions are retained for **60 seconds idle**, up to **two profiles**, with exclusive access and a fresh conversation for each review. Further concurrent requests fail explicitly. Failed/cancelled sessions close; disconnect closes retained sessions. Release idle sessions before manual login or wait for idle expiry. This is not a background daemon; separate CLI commands close Chrome after each review.
+
+**Upgrade from 0.5:** automatic web delivery now defaults to `auto`, not `prefill`, and quiet mode is the default. Specify `--mode prefill` explicitly if you only want to fill the composer. Setup now persists defaults. Existing prepare-only commands still do not send implicitly. Restart your MCP server after upgrading.
 
 ## Record an assessment
 

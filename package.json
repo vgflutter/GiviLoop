@@ -1,6 +1,6 @@
 {
   "name": "giviloop",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Double-check your coding agent with web chat or local models. Saved reviews, CLI and MCP.",
   "type": "module",
   "license": "MIT",
@@ -46,7 +46,8 @@
     "docs/web-providers.md",
     "docs/releases/0.4.0.md",
     "docs/setup-and-evidence.md",
-    "docs/releases/0.5.0.md"
+    "docs/releases/0.5.0.md",
+    "docs/releases/0.6.0.md"
   ],
   "engines": {
     "node": ">=20"

@@ -44,7 +44,7 @@ For MCP use `givi_ask_web_llm` with `webProvider: "gemini-web"`, or prepare with
 ## What was exercised
 
 - Four complete product runs: ChatGPT authenticated CLI and anonymous MCP; Gemini anonymous CLI and fresh-profile MCP. An earlier Gemini UI exploration also completed a small synthetic review. No private repository files or credentials were submitted.
-- Gemini initially failed before sending when its cookie dialog was animated in a minimized window. The fix temporarily restores Chrome, rejects optional cookies, waits for dismissal, and minimizes again before sending. The corrected fresh-profile MCP run completed.
+- Gemini initially failed before sending when its cookie dialog was animated in a minimized window. That release temporarily restored Chrome, rejected optional cookies, waited for dismissal, and minimized again before sending. In 0.6 quiet mode instead pauses; foreground setup is explicit. The corrected fresh-profile MCP run completed.
 - The MCP runs prepared an actual synthetic Git diff, saved and read the response, and verified the source stayed unchanged. Seven independent cases reproduce the `slice(-0)` regression and validate the intended fix; generated code was not executed.
 - New browser fixtures cover CLI/MCP round trips for all three new adapters, destination selection, login redirects, partial answers, user/code-copy controls, and first-use Gemini setup. Existing ChatGPT browser, upload, model, cancellation and challenge tests remain in the suite.
 - Profiles and raw DOM diagnostics stay local and excluded from Git/npm. Reports contain status/provider/hash, not cookies or prompt text. Web token consumption and total savings remain unknown.
@@ -108,7 +108,7 @@ npm run givi -- browser check --provider deepseek-web
 node scripts/web-acceptance.mjs --provider deepseek-web
 ```
 
-Repeat with `claude-web`. A check with `ready: true` and `submitted: false` only proves the composer is accessible; the real two-phase test and manual response assessment above are still required. If a verification loop occurs, stop and report the status instead of repeatedly clicking or relaunching. Use `--background`, not `--headless`, for normal reviews; the window starts minimized without activation; setup, verification or uploads can still show it.
+Repeat with `claude-web`. A check with `ready: true` and `submitted: false` only proves the composer is accessible; the real two-phase test and manual response assessment above are still required. If a verification loop occurs, stop and report the status instead of repeatedly clicking or relaunching. Use `--background`, not `--headless`, for normal reviews; the window starts minimized without activation; setup, verification or uploads pause for explicit foreground action. OS-specific focus changes remain possible.
 
 **Readiness:** ChatGPT, anonymous Gemini and signed-in Claude have evidence for a limited pilot. DeepSeek delivery now works, but its corrected-code quality control failed; treat its findings as unverified suggestions, never automatic changes. All website adapters remain experimental. Passing these small cases is not a general model-quality benchmark or validation of long reasoning, specific subscription models, all locales or quota recovery. A stable multi-provider claim requires those remaining paths to be exercised and any observed failures corrected.
 

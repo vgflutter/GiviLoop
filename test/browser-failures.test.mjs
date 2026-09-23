@@ -66,7 +66,7 @@ function scenario(t, settings = {}) {
   return {
     root, profile, response, metrics,
     run: options => sendToChatGptWeb({ repositoryPath: root, userDataDir: profile, requestPath: request,
-      responsePath: response, mode: "auto", verificationWaitMs: 0, responseStableMs: 500, maxWaitMs: 3000, ...options }),
+      responsePath: response, mode: "auto", background: false, verificationWaitMs: 0, responseStableMs: 500, maxWaitMs: 3000, ...options }),
     status: () => JSON.parse(readFileSync(path.join(root, "browser-status.json"), "utf8")),
   };
 }

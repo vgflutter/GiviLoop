@@ -24,7 +24,7 @@ The restore prompt indicates a previous abnormal Chrome shutdown; it does not id
 
 To clear an old marker, open the **dedicated** profile with `givi browser login`. Restore the old tabs if you need them; otherwise dismiss “Restore pages?” or open a new window (`Cmd+N` on macOS, `Ctrl+N` on Windows/Linux) after Chrome has started. Then quit that Chrome normally (`Cmd+Q` on macOS; Exit from Chrome's menu on Windows/Linux) and run `givi doctor` again. Chrome should now save `previousExit: "Normal"`. This preserves the login profile; simply closing a window with recovery still pending can leave the marker unchanged.
 
-Completed `auto` runs request Chrome's cooperative shutdown and wait for the owned process to exit before returning. Avoid force-quitting it. If `Crashed` returns after recovery, investigate that new shutdown rather than repeatedly clearing the marker; check the run's `browser-status.json` for provider errors and the OS crash reports for a browser crash.
+Completed CLI `auto` runs request Chrome's cooperative shutdown and wait for the owned process to exit before returning. MCP retains healthy quiet sessions for up to 60 seconds idle; `givi_release_browser_sessions` closes them sooner. Avoid force-quitting it. If `Crashed` returns after recovery, investigate that new shutdown rather than repeatedly clearing the marker; check the run's `browser-status.json` for provider errors and the OS crash reports for a browser crash.
 
 1. Close the dedicated GiviLoop Chrome window normally. Do not kill every Chrome process.
 2. Run `givi doctor` again. Wait for `profileBusy: false` before sending.
@@ -35,13 +35,13 @@ Do not remove `SingletonLock` while Chrome owns the profile, copy active profile
 
 ## Background versus headless
 
-`--background --mode auto` starts normal Chrome without a startup window, then creates a background target already minimized and verifies its state. This avoids the usual foreground launch before minimization. ZIP uploads still temporarily show Chrome to initialize its attachment controls, then minimize it again before sending. It requires a desktop session capable of minimizing windows.
+`--background --mode auto` starts normal Chrome without a startup window, then creates a background target already minimized and verifies its state. This avoids the usual foreground launch before minimization. As of 0.6.0 this is the default. Setup/verification/uploads pause with `needs-attention`; quiet mode does not deliberately restore the window. ZIP uploads need explicit `--foreground`. It requires a desktop session capable of minimizing windows.
 
 On Linux, a bare Xvfb display does not provide a window manager and can produce `BACKGROUND_UNAVAILABLE`. The browser/package CI uses Xvfb plus Openbox and waits for window management to become available before testing native background sessions. A desktop requirement is separate from the website's access restrictions.
 
 Some Linux window managers restore Chrome when the composer/send control receives focus. GiviLoop checks and minimizes the window again after sending, keeping the response wait in the background; a transient window during that interaction remains possible on those desktops.
 
-On macOS, two real Claude MCP reviews completed with this startup path while monitoring the foreground application: neither GiviLoop-owned Chrome instance became foreground. The test does not independently certify every fullscreen/Spaces arrangement. Setup, human verification and ZIP uploads intentionally restore Chrome when needed; the window is minimized again before the review continues. Normal background startup does not reactivate VS Code or another app on a timer, so it does not pull you away from an app you choose to use during generation.
+On macOS, two real Claude MCP reviews completed with this startup path while monitoring the foreground application: neither GiviLoop-owned Chrome instance became foreground. The test does not independently certify every fullscreen/Spaces arrangement. Since 0.6.0, setup, human verification and ZIP uploads require explicit foreground action. Healthy MCP sessions can reuse one Chrome process for successive reviews. Normal background startup does not reactivate VS Code or another app on a timer, so it does not pull you away from an app you choose to use during generation.
 
 `--headless --mode auto` does not create a visible window. **It is currently unusable for live ChatGPT reviews:** the release trial received HTTP 403, and the 22 September checks were challenged with both authenticated and anonymous profiles. No prompt was sent. Use `--background`. GiviLoop stops on the block; it does not silently switch modes, hide automation flags, retry rate limits, or bypass an account challenge.
 
@@ -53,12 +53,12 @@ In 0.3.0-rc.2, visible/background sessions use native Chrome connected over a te
 
 ```sh
 givi browser check
-givi browser check --verification-wait-ms 300000
+givi browser check --foreground --verification-wait-ms 300000
 ```
 
 `browser check` opens the dedicated profile and checks website access without preparing, filling or sending any review. Its JSON output distinguishes a readable login session, a usable composer, and a saved verification cookie. Cookie values and conversation text are never returned. A readable session or a future cookie expiry does not prove that the site accepts the browser.
 
-In visible mode, both a review and this check wait up to three minutes for human verification. `--verification-wait-ms` / MCP `verificationWaitMs` changes this period, up to fifteen minutes; `0` disables the wait. A background review temporarily restores its window for the tap and minimizes it again after verification. The original request resumes only after an allowed document and composer appear on the expected provider origin. GiviLoop does not click verification controls itself. Headless cannot wait for a human and reports the challenge immediately.
+In visible mode, both a review and this check wait up to three minutes for human verification. `--verification-wait-ms` / MCP `verificationWaitMs` changes this period, up to fifteen minutes; `0` disables the wait. Quiet mode instead pauses without waiting, even if a longer verification timeout is supplied. Inspect `givi status`, use `givi open` when ready, quit that Chrome after setup, then `givi resume`. The original request resumes only after an allowed document and composer appear on the expected provider origin. GiviLoop does not click verification controls itself. Headless cannot wait for a human and reports the challenge immediately.
 
 Cloudflare identifies these responses with `cf-mitigated: challenge`. GiviLoop also recognizes a challenge in the page DOM. A third challenged document during the same wait stops with `ACCESS_CHALLENGE_LOOP`, rather than asking you to keep repeating the tap. There is no automatic reload or new request submission by GiviLoop during this wait.
 
@@ -73,7 +73,8 @@ If the loop recurs, stop clicking. Check access with `givi browser login` in reg
 | Code | Meaning and next step |
 | --- | --- |
 | `BROWSER_NOT_FOUND` | Install Google Chrome, or set `GIVILOOP_CHROME_PATH` to the Chrome executable. `npm ci` installs JavaScript dependencies, not system Chrome. |
-| `BROWSER_PROFILE_BUSY` | Close the dedicated browser that owns this profile, or use a separate dedicated profile for another job. No prompt was sent. |
+| `BROWSER_PROFILE_BUSY` | Wait for the active review, close the dedicated browser, or release idle MCP sessions with `givi_release_browser_sessions` (automatic expiry: 60 seconds). No prompt was sent. |
+| `BROWSER_INTERACTION_REQUIRED` | Quiet ZIP upload paused before opening Chrome. Use `givi resume --foreground`, or use inline text via `ask --file`. |
 | `BROWSER_LAUNCH_FAILED` | Check the executable, permissions, and profile health with `doctor`. |
 | `BACKGROUND_UNAVAILABLE` | The window could not be minimized. Use visible mode in that environment. No prompt was sent. |
 | `NAVIGATION_FAILED` / `NETWORK_ERROR` | Navigation failed before submission, including its one allowed retry. Check connectivity and open the site with `browser login`. |
@@ -125,6 +126,6 @@ Use the same `--provider NAME-web` with `browser login`, `browser check` and `do
 
 DeepSeek `/sign_in`, Claude `/login` and Google account redirects stop with `LOGIN_REQUIRED` before sending. A usable anonymous composer is accepted. For new chats `sessionCookieReadable: null` means cookie authentication was not inspected; it does not mean signed out. `ready: true` proves a usable composer, not a successful generation or model identity.
 
-`MODEL_SELECTION_UNSUPPORTED` / `ATTACHMENT_UNSUPPORTED` mean the new adapter currently accepts the site's selected/default model and inline text only. Use `ask --file` or `prepare`; ZIP upload and `--model` are ChatGPT-only. `BROWSER_SETUP_REQUIRED` means initial Gemini/Claude cookie setup did not finish: open that provider's login browser, finish setup and quit Chrome. A first-use cookie choice may briefly restore a background window. No prompt is sent while that choice is pending.
+`MODEL_SELECTION_UNSUPPORTED` / `ATTACHMENT_UNSUPPORTED` mean the new adapter currently accepts the site's selected/default model and inline text only. Use `ask --file` or `prepare`; ZIP upload and `--model` are ChatGPT-only. `BROWSER_SETUP_REQUIRED` means initial Gemini/Claude cookie setup did not finish: open that provider's login browser, finish setup and quit Chrome. Quiet mode does not click that choice or restore the window. Use `givi open`, finish setup, quit Chrome and `givi resume`. No prompt is sent while that choice is pending.
 
 An incomplete response is never silently substituted with user text, a previous answer or a reasoning pane. Check the conversation before retrying after `RESPONSE_INCOMPLETE`, `RESPONSE_TIMEOUT` or `SUBMISSION_UNCERTAIN`: the earlier prompt may already have been sent. [Current live validation](web-providers.md).

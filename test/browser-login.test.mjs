@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { cliPath, fixture } from "./helpers.mjs";
 
 function login(f, executable, profile, provider) {
@@ -21,15 +22,26 @@ test("login reports an immediately failing browser instead of claiming it opened
   assert.doesNotMatch(result.stdout, /Opened regular Chrome/);
 });
 
-for (const [provider,url] of [["chatgpt-web","https://chatgpt.com/"],["deepseek-web","https://chat.deepseek.com/"],["claude-web","https://claude.ai/new"],["gemini-web","https://gemini.google.com/app"]]) test(`${provider}: native login requests the correct site and survives the CLI`, { skip: process.platform === "win32" }, t => {
+for (const [provider,url] of [["chatgpt-web","https://chatgpt.com/"],["deepseek-web","https://chat.deepseek.com/"],["claude-web","https://claude.ai/new"],["gemini-web","https://gemini.google.com/app"]]) test(`${provider}: native login requests the correct site and survives the CLI`, { skip: process.platform === "win32" }, async t => {
   const f = fixture(t), executable = path.join(f.root, "chrome-stub"), capture = path.join(f.root, "launch.json");
   writeFileSync(executable, `#!${process.execPath}\nconst fs=require('node:fs');fs.writeFileSync(${JSON.stringify(capture)},JSON.stringify({pid:process.pid,args:process.argv.slice(2)}));setTimeout(()=>{},15000);\n`);
   chmodSync(executable, 0o700);
-  t.after(() => { if (existsSync(capture)) { try { process.kill(JSON.parse(readFileSync(capture, "utf8")).pid, "SIGTERM"); } catch {} } });
+  let launched;
+  t.after(() => { if (launched) { try { process.kill(launched.pid, "SIGTERM"); } catch {} } });
   const profile = path.join(f.root, "dedicated profile");
   const result = login(f, executable, profile, provider);
   assert.equal(result.status, 0, result.stderr);
-  const launched = JSON.parse(readFileSync(capture, "utf8"));
+  // The launcher observes early exit for one second; it does not promise the
+  // child's JavaScript was scheduled before that observation completes.
+  const deadline = Date.now() + 5000;
+  while (!launched && Date.now() < deadline) {
+    try { launched = JSON.parse(readFileSync(capture, "utf8")); }
+    catch (error) {
+      if (error.code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
+      await delay(25);
+    }
+  }
+  assert.ok(launched, "Detached login stub did not record its launch within five seconds");
   assert.doesNotThrow(() => process.kill(launched.pid, 0));
   assert.ok(launched.args.includes(url));
   assert.ok(launched.args.includes("--new-window"));
