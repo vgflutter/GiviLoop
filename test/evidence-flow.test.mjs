@@ -18,12 +18,85 @@ function reviewed(t) {
   return { ...f, run, input: { repositoryPath: f.repo, runId: run.id, title: 'Wrong value', claim: 'Value should be 2', files: ['code.js'] } };
 }
 
+test('finding writes require an explicit run even when latest points to another completed review', t => {
+  const f = reviewed(t);
+  const first = recordFinding(f.input);
+  assert.equal(f.cli('ask', ['--question', 'Another review', '--file', 'code.js']).status, 0);
+  const second = f.latest();
+  writeFileSync(second.response, 'Another answer, with independent findings.');
+  const other = recordFinding({ ...f.input, runId: second.id });
+  const before = [f.run, second].map(run => readFileSync(path.join(run.dir, 'findings.json'), 'utf8'));
+  for (const args of [
+    ['add', '--title', 'Late finding from first review', '--claim', 'Must not attach to latest'],
+    ['update', '--id', other.findingId, '--status', 'unverified'],
+  ]) {
+    const result = f.cli('findings', args);
+    assert.equal(result.status, 1, 'An omitted run ID must not select the latest ledger for writes');
+    assert.match(result.stderr, /explicit runId.*--run-id/i);
+  }
+  assert.throws(() => recordFinding({ repositoryPath: f.repo, runId: second.id, id: first.findingId, status: 'unverified' }), /not found in selected run/);
+  assert.deepEqual([f.run, second].map(run => readFileSync(path.join(run.dir, 'findings.json'), 'utf8')), before);
+  const result = f.cli('findings', ['update', '--run-id', f.run.id, '--id', first.findingId, '--status', 'dismissed', '--reason', 'Contract requires 1', '--evidence', 'Inspected code.js: value is 1']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).runId, f.run.id);
+  assert.equal(readFindings(f.repo, f.run.id).findings[0].history.length, 2);
+  assert.equal(readFileSync(path.join(second.dir, 'findings.json'), 'utf8'), before[1]);
+  assert.equal(f.latest().id, second.id);
+});
+
+test('the run/finding pair isolates updates even if two ledgers contain the same finding ID', t => {
+  const f = reviewed(t), first = recordFinding(f.input);
+  assert.equal(f.cli('ask', ['--question', 'Second review', '--file', 'code.js']).status, 0);
+  const second = f.latest();
+  writeFileSync(second.response, 'Second review response');
+  recordFinding({ ...f.input, runId: second.id });
+  // Deliberately simulate equal locally-scoped IDs; do not rely on randomness
+  // to protect review identity. Each ledger keeps its own request/response hash.
+  const ledgerPath = path.join(second.dir, 'findings.json');
+  const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8'));
+  ledger.findings[0].id = first.findingId;
+  writeFileSync(ledgerPath, JSON.stringify(ledger));
+  const before = readFileSync(ledgerPath, 'utf8');
+  for (const runId of [undefined, null, '', ' ', '../../bad', 42]) {
+    assert.throws(() => recordFinding({ repositoryPath: f.repo, runId, id: first.findingId, status: 'unverified' }), /explicit runId/);
+  }
+  recordFinding({ repositoryPath: f.repo, runId: f.run.id, id: first.findingId, status: 'unverified', reason: 'Still assessing the first response' });
+  assert.equal(readFindings(f.repo, f.run.id).findings[0].history.length, 2);
+  assert.equal(readFileSync(ledgerPath, 'utf8'), before);
+  recordFinding({ repositoryPath: f.repo, runId: second.id, id: first.findingId, status: 'unverified', reason: 'Assessing only the second response' });
+  assert.equal(readFindings(f.repo, second.id).findings[0].history.at(-1).reason, 'Assessing only the second response');
+  assert.equal(readFindings(f.repo, f.run.id).findings[0].history.at(-1).reason, 'Still assessing the first response');
+});
+
+test('MCP schema and runtime reject implicit finding writes and preserve the explicitly selected older review', async t => {
+  const f = reviewed(t), first = recordFinding(f.input);
+  assert.equal(f.cli('ask', ['--question', 'Second review', '--file', 'code.js']).status, 0);
+  const second = f.latest(); writeFileSync(second.response, 'Second response');
+  const other = recordFinding({ ...f.input, runId: second.id });
+  const client = new Client({ name: 'run-scope-test', version: '1' });
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: [path.join(distDir, 'mcp-server.js')], env: f.env, stderr: 'pipe' }));
+  t.after(() => client.close());
+  const tool = (await client.listTools()).tools.find(tool => tool.name === 'givi_record_finding');
+  assert.ok(tool.inputSchema.required.includes('runId'));
+  const before = [f.run, second].map(run => readFileSync(path.join(run.dir, 'findings.json'), 'utf8'));
+  for (const arguments_ of [
+    { repositoryPath: f.repo, title: 'From an older review', claim: 'Do not choose latest' },
+    { repositoryPath: f.repo, id: other.findingId, status: 'unverified' },
+  ]) await assert.rejects(client.callTool({ name: 'givi_record_finding', arguments: arguments_ }), /explicit runId|runId.*required/);
+  await assert.rejects(client.callTool({ name: 'givi_record_finding', arguments: { repositoryPath: f.repo, runId: second.id, id: first.findingId, status: 'unverified' } }), /not found in selected run/);
+  assert.deepEqual([f.run, second].map(run => readFileSync(path.join(run.dir, 'findings.json'), 'utf8')), before);
+  await client.callTool({ name: 'givi_record_finding', arguments: { repositoryPath: f.repo, runId: f.run.id, id: first.findingId, status: 'dismissed', reason: 'Contract requires 1', evidence: ['code.js exports 1'] } });
+  assert.equal(readFindings(f.repo, f.run.id).findings[0].status, 'dismissed');
+  assert.equal(readFileSync(path.join(second.dir, 'findings.json'), 'utf8'), before[1]);
+  assert.equal(f.latest().id, second.id);
+});
+
 test('CLI records decisions, preserves history, detects edits and never modifies source', t => {
   const f = reviewed(t);
-  const added = f.cli('findings', ['add', '--title', 'Wrong value', '--claim', 'Value should be 2', '--file', 'code.js']);
+  const added = f.cli('findings', ['add', '--run-id', f.run.id, '--title', 'Wrong value', '--claim', 'Value should be 2', '--file', 'code.js']);
   assert.equal(added.status, 0, added.stderr);
   const id = JSON.parse(added.stdout).findingId;
-  const updated = f.cli('findings', ['update', '--id', id, '--status', 'dismissed', '--reason', 'Contract requires 1', '--evidence', 'Contract and assertion both specify 1']);
+  const updated = f.cli('findings', ['update', '--run-id', f.run.id, '--id', id, '--status', 'dismissed', '--reason', 'Contract requires 1', '--evidence', 'Contract and assertion both specify 1']);
   assert.equal(updated.status, 0, updated.stderr);
   let report = JSON.parse(f.cli('findings', ['list', '--json']).stdout);
   assert.equal(report.findings[0].history.length, 2);
@@ -56,7 +129,7 @@ test('changing either request or response invalidates decisions and prevents mis
   for (const file of [f.run.request, f.run.response]) {
     const content = readFileSync(file, 'utf8'); writeFileSync(file, content + '\nchanged');
     assert.equal(readFindings(f.repo).findings[0].effectiveStatus, 'unverified');
-    assert.throws(() => recordFinding({ repositoryPath: f.repo, id: findingId, status: 'unverified' }), /content changed/);
+    assert.throws(() => recordFinding({ repositoryPath: f.repo, runId: f.run.id, id: findingId, status: 'unverified' }), /content changed/);
     assert.throws(() => prepareRecheck(f.repo, undefined, findingId), /content changed/);
     writeFileSync(file, content);
   }

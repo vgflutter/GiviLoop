@@ -562,7 +562,7 @@ test('evidence recheck sends the new snapshot through MCP and preserves parent r
   const first = await cli(f, 'ask', ['--file', 'code.ts', '--question', 'Review', '--send', 'chatgpt-web', '--mode', 'auto', '--headless', '--browser-profile', f.profile, '--response-stable-ms', '100']);
   assert.equal(first.code, 0, first.stderr);
   const parent = f.latest();
-  const added = await cli(f, 'findings', ['add', '--title', 'Value', '--claim', 'Value must be 2', '--file', 'code.ts']);
+  const added = await cli(f, 'findings', ['add', '--run-id', parent.id, '--title', 'Value', '--claim', 'Value must be 2', '--file', 'code.ts']);
   assert.equal(added.code, 0, added.stderr);
   writeFileSync(path.join(f.repo, 'code.ts'), 'export const value = 2;');
   const prepared = await cli(f, 'recheck', ['--run-id', parent.id, '--finding-id', JSON.parse(added.stdout).findingId]);

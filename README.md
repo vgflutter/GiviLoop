@@ -97,7 +97,7 @@ and tests; report confirmed, dismissed or unverified, with reasons.
 Do not edit files.
 ```
 
-Use the [ready-to-paste **before-commit recipe**](docs/before-commit.md#use-it-on-your-next-real-change) for your next change. The coding agent performs the verification. Ask it to **save findings with `givi_record_finding`**, including source/contract/test files, a reason and evidence. `givi_list_findings` reports confirmed, dismissed or unverified, with decision history; changed referenced files make the assessment stale. `givi_prepare_recheck` prepares a new request for one finding with current source, without sending it or applying fixes. [CLI equivalents and examples](docs/setup-and-evidence.md).
+Use the [ready-to-paste **before-commit recipe**](docs/before-commit.md#use-it-on-your-next-real-change) for your next change. The coding agent performs the verification. Ask it to **save findings with `givi_record_finding`**, including the required review `runId`, source/contract/test files, a reason and evidence. Finding writes never default to the latest review; new reviews keep earlier findings separate. `givi_list_findings` reports confirmed, dismissed or unverified, with decision history; changed referenced files make the assessment stale. `givi_prepare_recheck` prepares a new request for one finding with current source, without sending it or applying fixes. [CLI equivalents and examples](docs/setup-and-evidence.md).
 
 Finish with **`givi_export_report`** or **`givi report`**: a local Markdown report with confirmed findings, dismissed advice, uncertainties and recorded evidence, ready to inspect before attaching to a PR. GiviLoop records the agent's assessment; the exporter does not execute or certify tests. An empty finding list is not proof of clean code. [Full Double Check recipe](docs/double-check.md).
 
@@ -125,7 +125,7 @@ Use `givi auto-review status` to inspect configuration, or `givi auto-review dis
 ## Install, learn, contribute
 
 - [Latest release and installable package](https://github.com/vgflutter/GiviLoop/releases/latest) · [CLI/MCP reference](docs/usage.md)
-- [Current provider results](docs/web-providers.md) · [Troubleshooting](docs/troubleshooting.md) · [0.8.1 changes and validation](docs/releases/0.8.1.md)
+- [Current provider results](docs/web-providers.md) · [Troubleshooting](docs/troubleshooting.md) · [0.8.2 review identity fix](docs/releases/0.8.2.md)
 - [Report a bug or a Double Check experience](https://github.com/vgflutter/GiviLoop/issues/new/choose) · [Contributing](CONTRIBUTING.md) · [Roadmap](docs/roadmap.md)
 
 Add `.giviloop/` to the reviewed repository's `.gitignore`: run files can contain source and prompts. Redaction is best effort. [Data handling](docs/usage.md#safety-and-legal).

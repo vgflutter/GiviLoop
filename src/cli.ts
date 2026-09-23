@@ -2019,9 +2019,9 @@ Commands:
   resume    Continue only a needs-attention run proven unsent and unchanged.
             --foreground permits visible setup/uploads. Never resends an uncertain request.
   cancel    Cooperatively cancel an active review. Does not retract a submitted prompt.
-  findings  add --title TEXT --claim TEXT [--file PATH] (repeat --file for contracts/tests)
-            update --id ID --status confirmed|dismissed|unverified --reason TEXT --evidence TEXT
-            list [--json]; all accept --repo PATH and --run-id ID.
+  findings  add --run-id RUN_ID --title TEXT --claim TEXT [--file PATH] (repeat --file for contracts/tests)
+            update --run-id RUN_ID --id ID --status confirmed|dismissed|unverified --reason TEXT --evidence TEXT
+            list [--run-id RUN_ID] [--json]; all accept --repo PATH. Writes never default to latest.
             Confirmed/dismissed require source files, reason and evidence; tests are not executed.
   recheck   --finding-id ID [--run-id ID] [--file PATH]: prepare current context, no sending.
   prepare   Create a review package from local git diff and untracked files.

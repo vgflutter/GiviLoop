@@ -613,7 +613,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const result = toolName === "givi_export_report" ? exportReviewReport(repositoryPath, runId)
       : toolName === "givi_list_findings" ? readFindings(repositoryPath, runId)
       : toolName === "givi_prepare_recheck" ? prepareRecheck(repositoryPath, runId, readRequiredString(input, "findingId"), readOptionalStringArray(input, "files"))
-      : recordFinding({ repositoryPath, runId, id: readOptionalString(input, "id"), title: readOptionalString(input, "title"), claim: readOptionalString(input, "claim"), status: readOptionalString(input, "status"), reason: readOptionalString(input, "reason"), evidence: readOptionalStringArray(input, "evidence"), files: readOptionalStringArray(input, "files") });
+      : recordFinding({ repositoryPath, runId: runId!, id: readOptionalString(input, "id"), title: readOptionalString(input, "title"), claim: readOptionalString(input, "claim"), status: readOptionalString(input, "status"), reason: readOptionalString(input, "reason"), evidence: readOptionalStringArray(input, "evidence"), files: readOptionalStringArray(input, "files") });
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   }
 
@@ -804,7 +804,7 @@ function buildHelpToolResponse(): {
           "- Auto web reviews default to a minimized browser. Human attention pauses the run: inspect givi_status, use givi_open only at the user's request, finish setup and quit Chrome, then givi_resume. Uploads require foreground=true on resume.",
           "- givi_cancel requests cooperative cancellation, without retracting submitted prompts. Resume refuses submitted, uncertain or changed requests.",
           "- Healthy background sessions are reused within this MCP process, with separate chats, up to two profiles and 60 seconds idle. givi_release_browser_sessions closes idle sessions before manual login; disconnect closes them too.",
-          "- Evidence: after independent checks, use givi_record_finding with source/contract/test files, status, reason and evidence. Use givi_list_findings to see stale decisions. These tools record your assessment, not certified test results.",
+          "- Evidence: after independent checks, use givi_record_finding with the original review runId and source/contract/test files, status, reason and evidence. Use givi_list_findings to see stale decisions. These tools record your assessment, not certified test results.",
           "- Recheck: givi_prepare_recheck creates a new request for one finding with current files; inspect and explicitly send its returned runId, then verify again.",
           "- Before commit: prepare current Git changes, include relevant contracts/tests, send once to the chosen provider, verify each finding independently, record it, then givi_export_report. Do not commit, apply fixes or publish the report unless requested. An empty finding list is not a clean-code verdict.",
           "- First use: givi demo runs a public example and its bundled deterministic verifier; --offline is an explicitly authored illustration without a provider. Never execute code from a model response as part of a demo.",
@@ -1209,7 +1209,7 @@ function buildWebLlmToolResponse(result: {
           result.responsePath ? `Response: ${result.responsePath}` : undefined,
           "",
           buildExternalReviewHandlingInstructions(result.reviewResponseMode),
-          "After independent verification, use givi_record_finding to preserve each claim, source references, reason and evidence. Use givi_list_findings to inspect stale assessments, or givi_prepare_recheck for current context. These tools record your assessment; they do not execute tests.",
+          "After independent verification, use givi_record_finding with the original review runId to preserve each claim, source references, reason and evidence. Use givi_list_findings to inspect stale assessments, or givi_prepare_recheck for current context. These tools record your assessment; they do not execute tests.",
           result.responseText
             ? ["", formatUntrustedExternalReview(result.responseText)].join("\n")
             : undefined,

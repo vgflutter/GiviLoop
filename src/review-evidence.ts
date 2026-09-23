@@ -12,7 +12,7 @@ type Snapshot = { path: string; sha256: string | null };
 type Decision = { at: string; status: Status; reason: string; evidence: string[]; source: Snapshot[] };
 type Finding = { id: string; title: string; claim: string; history: Decision[] };
 type Ledger = { schemaVersion: 1; runId: string; requestSha256: string; responseSha256: string; findings: Finding[] };
-export type FindingInput = { repositoryPath: string; runId?: string; id?: string; title?: string; claim?: string; status?: string; reason?: string; evidence?: string[]; files?: string[] };
+export type FindingInput = { repositoryPath: string; runId: string; id?: string; title?: string; claim?: string; status?: string; reason?: string; evidence?: string[]; files?: string[] };
 const hash = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
 
 // Reject symlinks in every component, including storage directories. Never write
@@ -80,6 +80,9 @@ function sourceSnapshot(repository: string, files: string[], allowMissing: boole
 }
 
 export function recordFinding(input: FindingInput) {
+  // Reads may use latest for convenience; writes must retain the review identity
+  // chosen by the caller, even if another review advances the latest pointer.
+  if (typeof input.runId !== "string" || !RUN_ID_PATTERN.test(input.runId)) throw new Error("Finding writes require an explicit runId (CLI: --run-id RUN_ID) from the review being assessed; latest is not used.");
   if (input.id && (!input.status || input.title !== undefined || input.claim !== undefined)) throw new Error("Update requires status and preserves the original title/claim.");
   const run = selected(input.repositoryPath, input.runId);
   const release = acquireRunLock(run.directory, "finding-evidence");

@@ -11,7 +11,7 @@ import { distDir, fixture } from './helpers.mjs';
 const { automaticReview, automaticSnapshot, configureAutoReview, acknowledgeAutomaticReview, AUTO_REVIEW_INSTRUCTIONS } = await import(pathToFileURL(path.join(distDir, 'auto-review.js')));
 const { savePreferences } = await import(pathToFileURL(path.join(distDir, 'preferences.js')));
 const { pruneCompletedRuns } = await import(pathToFileURL(path.join(distDir, 'run-storage.js')));
-const { recordFinding } = await import(pathToFileURL(path.join(distDir, 'review-evidence.js')));
+const { recordFinding, readFindings } = await import(pathToFileURL(path.join(distDir, 'review-evidence.js')));
 const { exportReviewReport } = await import(pathToFileURL(path.join(distDir, 'review-report.js')));
 const git = (f, ...args) => execFileSync('git', ['-C', f.repo, ...args], { stdio: 'pipe' });
 const write = (f, name, data) => { mkdirSync(path.dirname(path.join(f.repo, name)), { recursive: true }); writeFileSync(path.join(f.repo, name), data); };
@@ -47,6 +47,32 @@ test('automatic review is inert without opt-in; setup alone never authorizes it'
   assert.equal(existsSync(path.join(f.repo, '.giviloop/runs')), false);
   assert.equal(configureAutoReview(f.repo, 'status').enabled, false);
   assert.equal(existsSync(path.join(f.repo, 'AGENTS.md')), false);
+});
+
+test('a new automatic task creates a separate run while prior findings remain unassessed', async t => {
+  const f = await enabled(t);
+  const first = await automaticReview(args(f, 'first-task'));
+  assert.equal(first.state, 'completed');
+  const finding = recordFinding({ repositoryPath: f.repo, runId: first.runId, title: 'Pending first review', claim: 'Investigate empty input', files: ['sum.js'] });
+  const firstLedger = path.join(f.repo, '.giviloop/runs', first.runId, 'findings.json');
+  const before = readFileSync(firstLedger, 'utf8');
+  write(f, 'sum.js', 'export const sum = xs => xs.reduce((a,b) => a+b, 0);\n');
+  const second = await automaticReview(args(f, 'second-task'));
+  assert.equal(second.state, 'completed');
+  assert.notEqual(second.runId, first.runId);
+  assert.ok(second.nextStep.includes(second.runId));
+  assert.equal(readFileSync(firstLedger, 'utf8'), before);
+  assert.equal(readFindings(f.repo, first.runId).findings[0].status, 'unverified');
+  assert.equal(readFindings(f.repo, second.runId).findings.length, 0);
+  const prior = await automaticReview(args(f, 'first-task'));
+  assert.equal(prior.runId, first.runId);
+  assert.equal(prior.reason, 'task-already-reviewed');
+  assert.equal(prior.sourceChanged, true);
+  assert.equal(readFileSync(path.join(f.repo, '.giviloop/latest-run-id'), 'utf8').trim(), second.runId);
+  recordFinding({ repositoryPath: f.repo, runId: first.runId, id: finding.findingId, status: 'unverified', reason: 'First response still under assessment' });
+  assert.equal(readFindings(f.repo, first.runId).findings[0].history.length, 2);
+  assert.equal(readFindings(f.repo, second.runId).findings.length, 0);
+  assert.equal(f.site.calls.filter(call => call.url === '/api/chat').length, 2);
 });
 
 test('enable/disable preserve other agent instructions, pin consent and reject malformed/symlink paths', async t => {

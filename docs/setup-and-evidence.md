@@ -60,6 +60,8 @@ MCP exposes `givi_status`, `givi_open`, `givi_resume` (`foreground: true` for vi
 
 First complete a normal review so its request and response are saved. Preserve the run ID from that review. Findings are entered by the user or coding agent after reading the answer; GiviLoop does not automatically extract them or treat model agreement as verification.
 
+**From 0.8.2, `--run-id` is required for both `findings add` and `findings update`.** Writes never fall back to the latest review. A finding is selected by its run ID plus finding ID; an ID belonging only to another run is rejected. Starting another review leaves earlier findings/history unchanged. `findings list` can still default to latest, but use the original run ID when finishing an earlier assessment.
+
 ```sh
 givi findings add --run-id RUN_ID \
   --title "Empty sum throws" --claim "sum([]) throws instead of returning 0" \
@@ -99,11 +101,11 @@ This is a targeted new review, not a full repository review. Nothing is submitte
 
 ## From an MCP coding agent
 
-Use `givi_record_finding` with `repositoryPath`, `runId`, `title`, `claim`, `files`, `status`, `reason` and `evidence`. To update, supply `id` and a new `status`, omitting title/claim. Read with `givi_list_findings`; prepare another review with `givi_prepare_recheck` and `findingId`. These complement the existing prepare/send/read tools; they do not introduce an embedded test runner.
+Use `givi_record_finding` with `repositoryPath`, **required `runId`**, `title`, `claim`, `files`, `status`, `reason` and `evidence`. To update, preserve that `runId`, supply `id` and a new `status`, omitting title/claim. Pass the same run ID when reading with `givi_list_findings` or preparing another review with `givi_prepare_recheck` and `findingId`. These complement the existing prepare/send/read tools; they do not introduce an embedded test runner.
 
 Suggested instruction:
 
-> Read the review in analyze-only mode. Verify each concrete finding against source and tests. Record it with givi_record_finding as confirmed, dismissed or unverified, including relevant files, the reason and actual evidence. Do not edit code. Return givi_list_findings and flag anything stale.
+> Preserve the review's runId for every read, finding write, list and report; never use latest while assessing an earlier review. Read the review in analyze-only mode. Verify each concrete finding against source and tests. Record it with givi_record_finding as confirmed, dismissed or unverified, including relevant files, the reason and actual evidence. Do not edit code. Return givi_list_findings and flag anything stale.
 
 ## Finish with a portable report
 

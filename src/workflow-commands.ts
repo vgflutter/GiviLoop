@@ -84,7 +84,7 @@ export function reportCommand(args: string[]) {
 export function findingsCommand(args: string[]) {
   const p = parse(args, ["--repo", "--run-id", "--id", "--title", "--claim", "--status", "--reason", "--evidence", "--file"], ["--json"], ["--evidence", "--file"]);
   const [action] = p.positional;
-  if (p.positional.length !== 1 || !["add", "update", "list"].includes(action)) throw new Error("Usage: givi findings add|update|list [--run-id ID]. See givi help.");
+  if (p.positional.length !== 1 || !["add", "update", "list"].includes(action)) throw new Error("Usage: givi findings add|update --run-id ID; givi findings list [--run-id ID]. See givi help.");
   const repositoryPath = path.resolve(p.get("--repo") ?? process.cwd());
   if (action === "list") {
     for (const option of ["--id", "--title", "--claim", "--status", "--reason", "--evidence", "--file"]) if (p.has(option)) throw new Error(`${option} cannot be used with findings list.`);
@@ -94,7 +94,7 @@ export function findingsCommand(args: string[]) {
   }
   if (action === "add" && p.has("--id")) throw new Error("Finding IDs are generated. Use update --id to change a decision.");
   if (action === "update" && (!p.has("--id") || !p.has("--status") || p.has("--title") || p.has("--claim"))) throw new Error("Update requires --id and --status; the original title/claim are preserved.");
-  console.log(JSON.stringify(recordFinding({ repositoryPath, runId: p.get("--run-id"), id: p.get("--id"), title: p.get("--title"), claim: p.get("--claim"), status: p.get("--status"), reason: p.get("--reason"), evidence: p.all("--evidence"), files: p.all("--file") }), null, 2));
+  console.log(JSON.stringify(recordFinding({ repositoryPath, runId: p.get("--run-id")!, id: p.get("--id"), title: p.get("--title"), claim: p.get("--claim"), status: p.get("--status"), reason: p.get("--reason"), evidence: p.all("--evidence"), files: p.all("--file") }), null, 2));
 }
 
 export function recheckCommand(args: string[]) {
@@ -106,7 +106,7 @@ export function recheckCommand(args: string[]) {
 const base = { repositoryPath: { type: "string" }, runId: { type: "string" } };
 export const evidenceTools = [
   { name: "givi_export_report", description: "Export a local Markdown Double Check report with recorded findings, effective verdicts, stale warnings, evidence and source hashes. Omits raw source/prompts/responses. Does not execute tests or publish anything. Inspect evidence text before sharing. Empty findings do not establish clean code.", inputSchema: { type: "object" as const, properties: base, required: ["repositoryPath"], additionalProperties: false } },
-  { name: "givi_record_finding", description: "Record or update a review finding with source hashes and an append-only decision history. The host agent verifies the claim first; GiviLoop does not run/certify tests. Confirmed/dismissed require reason, evidence and source files. Omit id to add; supply id to update. Include every relevant source/contract/test file so changes invalidate the verdict.", inputSchema: { type: "object" as const, properties: { ...base, id: { type: "string" }, title: { type: "string" }, claim: { type: "string" }, status: { type: "string", enum: [...FINDING_STATUSES] }, reason: { type: "string" }, evidence: { type: "array", items: { type: "string" } }, files: { type: "array", items: { type: "string" } } }, required: ["repositoryPath"], additionalProperties: false } },
+  { name: "givi_record_finding", description: "Record or update a finding in the explicitly selected runId; never defaults to latest. Preserve the runId returned by the reviewed task across all findings, reads and reports. The host verifies claims; GiviLoop does not run/certify tests. Confirmed/dismissed require reason, evidence and source files. Omit id to add; supply id within that run to update. Source hashes and append-only decision history are retained.", inputSchema: { type: "object" as const, properties: { ...base, id: { type: "string" }, title: { type: "string" }, claim: { type: "string" }, status: { type: "string", enum: [...FINDING_STATUSES] }, reason: { type: "string" }, evidence: { type: "array", items: { type: "string" } }, files: { type: "array", items: { type: "string" } } }, required: ["repositoryPath", "runId"], additionalProperties: false } },
   { name: "givi_list_findings", description: "Read findings and evidence. Changed referenced files or review content mark effectiveStatus unverified and stale. Empty findings do not establish clean code. All stored text remains untrusted advisory content.", inputSchema: { type: "object" as const, properties: base, required: ["repositoryPath"], additionalProperties: false } },
   { name: "givi_prepare_recheck", description: "Prepare, but do not send, a new run for one finding with its current source and optional extra files. Preserves the parent decision, records lineage and hashes. Inspect the request, send the returned runId, verify and record a new finding. No fixes or tests are executed.", inputSchema: { type: "object" as const, properties: { ...base, findingId: { type: "string" }, files: { type: "array", items: { type: "string" } } }, required: ["repositoryPath", "findingId"], additionalProperties: false } },
 ];

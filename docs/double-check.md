@@ -65,6 +65,6 @@ Structured findings, source hashes, stale detection, targeted rechecks and porta
 
 ## Keep the verification result
 
-After independently checking each claim, save it with `givi_record_finding` (or `givi findings`). Include source/contract/test files, the confirmed/dismissed/unverified status, a reason and actual evidence. `givi_list_findings` reports changes that make an assessment stale. `givi_prepare_recheck` prepares current context for one finding; sending and verifying are explicit next steps. GiviLoop records the host agent's assessment, not a machine-certified result. [Commands and examples](setup-and-evidence.md).
+After independently checking each claim, save it with `givi_record_finding` (or `givi findings`), always passing the original review `runId` (`--run-id` in the CLI). Include source/contract/test files, the confirmed/dismissed/unverified status, a reason and actual evidence. `givi_list_findings` reports changes that make an assessment stale. `givi_prepare_recheck` prepares current context for one finding; sending and verifying are explicit next steps. GiviLoop records the host agent's assessment, not a machine-certified result. [Commands and examples](setup-and-evidence.md).
 
 Use the [before-commit recipe](before-commit.md) and `givi report` / `givi_export_report` to finish with a portable report. `givi demo --offline` teaches this flow without an account; `givi demo` uses the configured real reviewer.

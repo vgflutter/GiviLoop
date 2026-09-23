@@ -16,7 +16,7 @@ function reviewed(t) {
   writeFileSync(f.latest().response, 'PRIVATE_RAW_RESPONSE');
   return f;
 }
-const input = f => ({ repositoryPath: f.repo, title: 'Wrong number', claim: 'The number must be 2', files: ['code.js'], reason: 'Contract comparison', evidence: ['Independent assertion'], status: 'confirmed' });
+const input = f => ({ repositoryPath: f.repo, runId: f.latest().id, title: 'Wrong number', claim: 'The number must be 2', files: ['code.js'], reason: 'Contract comparison', evidence: ['Independent assertion'], status: 'confirmed' });
 
 test('report exports decisions and provenance without raw prompts/source or network-capable Markdown', t => {
   const f = reviewed(t);
