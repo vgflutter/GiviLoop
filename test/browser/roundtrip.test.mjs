@@ -9,7 +9,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { cliPath, distDir, fixture, repoRoot } from "../helpers.mjs";
 
-const preload = fileURLToPath(new URL("../fixtures/browser-site.mjs", import.meta.url));
+const preload = new URL("../fixtures/browser-site.mjs", import.meta.url).href;
 const answer = "Review verificata: più contesto è utile.\nSeconda riga.";
 
 const webCases = [

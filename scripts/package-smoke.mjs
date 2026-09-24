@@ -10,9 +10,16 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const npm = process.env.npm_execpath;
 if (!npm) throw new Error("Run this check with npm run test:package.");
 const temporary = mkdtempSync(path.join(os.tmpdir(), "giviloop-package-"));
+const releases = path.join(root, ".giviloop/releases"); mkdirSync(releases, { recursive: true });
 function run(command, args, options = {}) {
-  try { return execFileSync(command, args, { cwd: root, encoding: "utf8", timeout: 120000, maxBuffer: 8_000_000, ...options }); }
+  const { evidence, ...execution } = options;
+  try {
+    const output = execFileSync(command, args, { cwd: root, encoding: "utf8", timeout: 120000, maxBuffer: 8_000_000, ...execution });
+    if (evidence) writeFileSync(path.join(releases, evidence), output);
+    return output;
+  }
   catch (error) {
+    if (evidence) writeFileSync(path.join(releases, evidence), String(error.stdout ?? "") + String(error.stderr ?? ""));
     console.error(String(error.stdout ?? "").slice(-8000));
     console.error(String(error.stderr ?? "").slice(-4000));
     throw error;
@@ -46,21 +53,21 @@ try {
   assert.match(run(process.execPath, [path.join(installed, "examples/double-check/verify.mjs")], { cwd: consumer }), /4 regression cases passed/);
   const tests = readdirSync(path.join(root, "test")).filter(name => name.endsWith(".test.mjs")).map(name => path.join("test", name));
   const env = { ...process.env, GIVILOOP_TEST_DIST_DIR: dist };
-  const unitOutput = run(process.execPath, ["--test", "--test-reporter=tap", ...tests], { env });
+  const unitOutput = run(process.execPath, ["--test", "--test-reporter=tap", ...tests], { env, timeout: 240000, evidence: "package-unit-tests.tap" });
   const browser = process.argv.includes("--browser");
-  const browserOutput = browser ? run(process.execPath, ["--test", "--test-reporter=tap", "--test-concurrency=1", "test/browser/roundtrip.test.mjs"], { env, timeout: 300000 }) : "";
+  const browserOutput = browser ? run(process.execPath, ["--test", "--test-reporter=tap", "--test-concurrency=1", "test/browser/roundtrip.test.mjs"], { env, timeout: 600000, evidence: "package-browser-tests.tap" }) : "";
   const audit = JSON.parse(run(process.execPath, [npm, "audit", "--json"], { cwd: consumer }));
   const report = {
     version: manifest.version, files: pack.files.map(item => item.path), archiveBytes: pack.size,
     sha256: createHash("sha256").update(readFileSync(archive)).digest("hex"),
     unitTests: Number(/# pass (\d+)/.exec(unitOutput)?.[1]),
+    unitSkipped: Number(/# skipped (\d+)/.exec(unitOutput)?.[1] ?? 0),
     browserTests: browser ? Number(/# pass (\d+)/.exec(browserOutput)?.[1]) : 0,
     auditVulnerabilities: audit.metadata.vulnerabilities.total,
     platform: process.platform, node: process.version, checkedAt: new Date().toISOString(),
   };
   assert.ok(Number.isSafeInteger(report.unitTests) && report.unitTests > 0, "Missing unit test count");
   if (browser) assert.ok(Number.isSafeInteger(report.browserTests) && report.browserTests > 0, "Missing browser test count");
-  const releases = path.join(root, ".giviloop/releases"); mkdirSync(releases, { recursive: true });
   copyFileSync(archive, path.join(releases, pack.filename));
   writeFileSync(path.join(releases, "release-checks.json"), JSON.stringify(report, null, 2) + "\n");
   writeFileSync(path.join(releases, "package-unit-tests.tap"), unitOutput);

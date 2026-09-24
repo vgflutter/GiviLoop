@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const distDir = process.env.GIVILOOP_TEST_DIST_DIR ?? path.join(repoRoot, "dist");
 export const cliPath = path.join(distDir, "cli.js");
-export const bridgePath = fileURLToPath(new URL("./fixtures/os-bridge.mjs", import.meta.url));
+export const bridgePath = new URL("./fixtures/os-bridge.mjs", import.meta.url).href;
 
 export function fixture(t, { git = false } = {}) {
   const root = mkdtempSync(path.join(os.tmpdir(), "giviloop-flow-"));

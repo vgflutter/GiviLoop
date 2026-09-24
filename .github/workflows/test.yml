@@ -54,7 +54,7 @@ jobs:
         run: choco install zip unzip --no-progress -y
       - name: Install window management for native background browser tests
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends openbox wmctrl
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends openbox wmctrl python3-xlib
       - name: Select isolated test browser
         if: runner.os == 'Linux'
         run: node -e "require('node:fs').appendFileSync(process.env.GITHUB_ENV, 'GIVILOOP_CHROME_PATH=/opt/google/chrome/chrome\n')"
@@ -85,10 +85,14 @@ jobs:
             exit 1
           fi
           npm run test:package -- --browser
+          node scripts/windowless-desktop.mjs
           TEST_DESKTOP
       - name: Test the installed package on Windows
         if: runner.os == 'Windows'
-        run: npm run test:package -- --browser
+        run: |
+          npm run test:package -- --browser
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/windowless-desktop.mjs
       - name: Keep the checked package and verification evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -99,5 +103,7 @@ jobs:
             .giviloop/releases/release-checks.json
             .giviloop/releases/package-unit-tests.tap
             .giviloop/releases/package-browser-tests.tap
+            .giviloop/diagnostics/windowless-desktop.json
+            .giviloop/diagnostics/desktop-*.log
           include-hidden-files: true
           if-no-files-found: warn

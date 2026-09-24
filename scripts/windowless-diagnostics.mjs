@@ -26,6 +26,12 @@ try {
   await check('focus-emulation');
   await session.send('Page.setWebLifecycleState', { state: 'active' });
   await check('active-lifecycle');
+  session.on('Page.screencastFrame', ({ sessionId }) => { void session.send('Page.screencastFrameAck', { sessionId }).catch(() => {}); });
+  await session.send('Page.startScreencast', { format: 'jpeg', quality: 0, maxWidth: 1, maxHeight: 1 });
+  await check('screencast');
+  await session.send('Page.stopScreencast');
+  await page.getByRole('button').press('Enter', { timeout: 2000 });
+  console.log(JSON.stringify({ label: 'keyboard-activation', sent: await page.evaluate(() => window.sent ?? 0) }));
   await session.detach();
 } finally {
   await context.close();
