@@ -23,6 +23,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - name: Install current ordinary Chrome on Windows
+        if: runner.os == 'Windows'
+        run: npx playwright install chrome
       - name: Prepare Linux
         if: runner.os == 'Linux'
         run: |

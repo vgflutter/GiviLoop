@@ -48,7 +48,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chrome
-        if: runner.os == 'Linux'
       - name: Install archive tools on Windows
         if: runner.os == 'Windows'
         run: choco install zip unzip --no-progress -y

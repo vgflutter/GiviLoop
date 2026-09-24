@@ -37,7 +37,7 @@ while !FileManager.default.fileExists(atPath: stopFile) {
         if activateControl {
             for window in onscreen {
                 if let pid = window[kCGWindowOwnerPID as String] as? Int, !activated.contains(pid) {
-                    NSRunningApplication(processIdentifier: pid_t(pid))?.activate(options: [.activateIgnoringOtherApps])
+                    NSRunningApplication(processIdentifier: pid_t(pid))?.activate(options: [])
                     activated.insert(pid)
                 }
             }
@@ -51,7 +51,8 @@ while !FileManager.default.fileExists(atPath: stopFile) {
         maxOnscreenWindows = max(maxOnscreenWindows, onscreen.count)
         samples += 1
     }
-    Thread.sleep(forTimeInterval: 0.02)
+    // NSWorkspace publishes application changes through the run loop.
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.02))
 }
 let result: [String: Any] = [
     "platform": "darwin", "intervalMs": 20, "samples": samples,

@@ -58,7 +58,8 @@ function git(root: string, args: string[]) {
 }
 function rootPath(repository: string) {
   const root = realpathSync(repository);
-  if (realpathSync(git(root, ["rev-parse", "--show-toplevel"]).trim()) !== root) throw new Error("Automatic review requires the Git repository root.");
+  // Git for Windows can return a different drive-letter case and separators.
+  if (path.relative(root, realpathSync(git(root, ["rev-parse", "--show-toplevel"]).trim())) !== "") throw new Error("Automatic review requires the Git repository root.");
   return root;
 }
 function readPolicy(root: string): Policy | undefined {

@@ -226,12 +226,20 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
     const button = provider === "chatgpt-web" ? await waitForSendButton(page) : await otherSendControl(page, provider);
     checkCancelled();
     assertChatOrigin(page, providerUrl);
+    // Windows/Linux hidden targets do not schedule animation frames. A mouse
+    // click's stability wait would stall indefinitely. Native buttons support
+    // trusted keyboard activation without animation frames or a forced click.
+    const keyboardSend = background && !headless && provider !== "deepseek-web";
+    if (keyboardSend && !await button.evaluate(node => node instanceof HTMLButtonElement ||
+        node instanceof HTMLInputElement && ["button", "submit"].includes(node.type))) {
+      throw new BrowserRunError("BROWSER_INTERACTION_REQUIRED", "The send control needs an explicitly visible session. Use givi resume --foreground. No prompt was sent.");
+    }
     // A click can have reached the server even if Playwright loses the page.
     // Never retry a click or navigation after this point.
     status.submitted = "unknown";
     record("submitting");
     try {
-      if (provider === "deepseek-web") await button.press("Enter", { timeout: 10_000 });
+      if (provider === "deepseek-web" || keyboardSend) await button.press("Enter", { timeout: 10_000 });
       else await button.click({ timeout: 10_000 });
     }
     catch {

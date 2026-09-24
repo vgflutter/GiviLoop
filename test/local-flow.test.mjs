@@ -190,7 +190,9 @@ test("a local run cannot be sent twice concurrently and releases its lock after 
   assert.equal(existsSync(path.join(run.dir, "review.lock")), false);
 });
 
-test("interrupting local CLI inference cancels the request and releases the run", async t => {
+// Node child.kill on Windows terminates the process rather than delivering a
+// POSIX signal. MCP cancellation below exercises cooperative cancellation there.
+test("interrupting local CLI inference cancels the request and releases the run", { skip: process.platform === "win32" }, async t => {
   const f = fixture(t), server = await localServer(t, "ollama");
   let release, child;
   server.state.gate = new Promise(resolve => { release = resolve; });

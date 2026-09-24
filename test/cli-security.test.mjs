@@ -339,7 +339,7 @@ test(
     const archiveEntries = execFileSync("unzip", ["-Z1", archivePath], {
       encoding: "utf8",
     })
-      .split("\n")
+      .split(/\r?\n/)
       .filter(Boolean);
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
     const skippedPaths = manifest.files.skipped.map((file) => file.path);
