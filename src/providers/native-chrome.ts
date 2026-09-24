@@ -105,7 +105,8 @@ async function prepareWindowless(browser: Browser, context: BrowserContext): Pro
           await delay(50);
         }
         throw unavailable();
-      } catch {
+      } catch (error) {
+        if (process.env.GIVILOOP_TEST_WINDOWLESS_DIAGNOSTICS === '1') console.error('Hidden target diagnostic:', error);
         await session.send("Target.closeTarget", { targetId }).catch(() => {});
         throw unavailable();
       }

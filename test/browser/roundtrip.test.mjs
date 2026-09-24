@@ -866,11 +866,11 @@ test('native maximized window can enter background mode and closes cleanly', {ti
   assert.equal(profileOwnerPid(profile),undefined);
 });
 
-test('native background pages have no OS window across restart, new pages and concurrent launches', {timeout:60000}, async t=>{
+test('native background pages have no OS window across restart, new pages and concurrent launches', {timeout:120000}, async t=>{
   const f=fixture(t),profile=path.join(f.root,'background-start-profile');
   const {launchChatBrowser,profileOwnerPid,minimizeBrowser,showBrowser}=await import(pathToFileURL(path.join(distDir,'providers/browser-runtime.js')));
   const previousAttach=process.env.PW_CHROMIUM_ATTACH_TO_OTHER;
-  for(let cycle=0;cycle<3;cycle++) {
+  for(let cycle=0;cycle<10;cycle++) {
     const contexts=await Promise.allSettled([profile,path.join(f.root,'parallel-profile')].map(p=>launchChatBrowser(p,false,true)));
     try {
       for(const result of contexts) assert.equal(result.status,'fulfilled',`Restart ${cycle}: ${String(result.reason)}`);
