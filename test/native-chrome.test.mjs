@@ -69,3 +69,46 @@ test("closing Chrome releases inherited stderr even while a helper stays alive",
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotThrow(() => process.kill(helperPid, 0), "cleanup must not kill a helper process it does not own");
 });
+
+test("unsupported extension loading closes owned Chrome without creating a visible fallback", { skip: process.platform === "win32" }, t => {
+  const f = fixture(t), executable = path.join(f.root, "chrome-windowless-stub");
+  const ownerFile = path.join(f.root, "owner.pid");
+  writeFileSync(executable, `#!${process.execPath}\n
+    const { writeFileSync } = require('node:fs');
+    writeFileSync(${JSON.stringify(ownerFile)}, String(process.pid));
+    const port = process.argv.find(arg => arg.startsWith('--remote-debugging-port=')).split('=')[1];
+    process.stderr.write('DevTools listening on ws://127.0.0.1:' + port + '/devtools/browser/test-browser\\n');
+    setInterval(() => {}, 1000);
+  `);
+  chmodSync(executable, 0o700);
+  const runner = path.join(f.root, "unsupported.mjs");
+  writeFileSync(runner, `
+    import assert from 'node:assert/strict';
+    import { createRequire } from 'node:module';
+    import { readFileSync } from 'node:fs';
+    const { chromium } = createRequire(${JSON.stringify(path.join(distDir, "cli.js"))})('playwright');
+    const commands = [];
+    const session = { detach: async () => {}, send: async method => {
+      commands.push(method);
+      if (method === 'Extensions.loadUnpacked') throw new Error('PRIVATE_EXTENSION_ERROR');
+      if (method === 'Browser.close') process.kill(Number(readFileSync(${JSON.stringify(ownerFile)}, 'utf8')), 'SIGTERM');
+    } };
+    chromium.connectOverCDP = async () => ({
+      contexts: () => [{}], isConnected: () => true, close: async () => {},
+      newBrowserCDPSession: async () => session,
+    });
+    const { nativeChrome } = await import(${JSON.stringify(pathToFileURL(path.join(distDir, "providers/native-chrome.js")).href)});
+    await assert.rejects(nativeChrome.launch(${JSON.stringify(path.join(f.root, "profile"))}, true), error => {
+      assert.equal(error.code, 'WINDOWLESS_UNAVAILABLE');
+      assert.doesNotMatch(error.message, /PRIVATE_EXTENSION_ERROR/);
+      return true;
+    });
+    assert.deepEqual(commands, ['Extensions.loadUnpacked', 'Browser.close']);
+    assert.equal(process.listenerCount('SIGINT'), 0);
+    assert.equal(process.listenerCount('SIGTERM'), 0);
+    console.log('closed without a fallback');
+  `);
+  const result = spawnSync(process.execPath, [runner], { env: { ...process.env, GIVILOOP_CHROME_PATH: executable }, encoding: "utf8", timeout: 5000 });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /closed without a fallback/);
+});

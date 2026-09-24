@@ -43,7 +43,9 @@ Setup saves your choice and generates `.giviloop/mcp.json` for your MCP client; 
 
 ChatGPT can also work without login when its website offers a usable chat. Use `--provider chatgpt-web` to choose it; availability and limits remain controlled by the site.
 
-**Do not use `--headless` for ChatGPT:** it is currently unsupported in practice; live checks were blocked by site verification both with and without login. Reviews now start minimized by default. Login, cookie choices, verification or uploads pause with **needs-attention** instead of deliberately showing Chrome. Use `status`, then `open` and `resume` when convenient; ZIP uploads require `resume --foreground`. OS-specific flashes remain possible.
+**In the current source checkout, background reviews run without a browser window.** GiviLoop uses regular Chrome and a small bundled offscreen extension in its dedicated profile; no manual extension installation is needed. This unreleased change passed real ChatGPT reviews on macOS. Windows and Linux VM validation is pending. Login, cookie choices, verification or uploads pause with **needs-attention**. Use `status`, then `open` and `resume` when convenient; ZIP uploads require `resume --foreground`. If windowless startup is unavailable, GiviLoop stops without opening a visible fallback. [Validation and requirements](docs/windowless-browser.md).
+
+**Do not use `--headless` for ChatGPT:** that separate diagnostic mode was blocked by site verification with and without login. The new background mode uses ordinary Chrome without `--headless`; it does not guarantee access whenever a provider requests verification.
 
 **Web access is experimental.** OpenAI's European terms prohibit automatic output extraction; technical success, anonymous access and MIT licensing do not establish permission. [Costs and access](docs/costs-and-access.md).
 
@@ -70,7 +72,7 @@ After setup, `givi review` reviews your Git changes with the saved provider. `gi
 - `givi open` / `givi resume` — handle a paused login/setup when convenient, then continue. Resume refuses requests already sent or of uncertain status.
 - `givi cancel` — stop waiting; this cannot retract a prompt already sent.
 
-MCP reuses a healthy minimized Chrome for subsequent reviews, with separate conversations, for up to 60 seconds idle. CLI commands close it after each review. [Defaults and controls](docs/setup-and-evidence.md#saved-defaults-and-quiet-reviews).
+MCP reuses a healthy windowless Chrome for subsequent reviews, with separate conversations, for up to 60 seconds idle. CLI commands close it after each review. [Defaults and controls](docs/setup-and-evidence.md#saved-defaults-and-quiet-reviews).
 
 ## Use it from your coding agent
 
@@ -133,7 +135,7 @@ In a source checkout, use `npm run givi -- auto-review enable --client codex --r
 
 - Off by default. Enabling authorizes sending selected source to the pinned reviewer; provider quotas and terms still apply.
 - One automatic submission per task and unchanged snapshot. Documentation-only selections are skipped; failures/login suspend further automatic sends.
-- Chrome stays minimized where supported. Human verification waits for you; there are no automatic clicks or retries. Window-manager flashes remain possible.
+- Background reviews use a hidden Chrome page. Human verification pauses for your attention; there are no automatic verification clicks, retries or visible fallbacks. [Tested environments](docs/windowless-browser.md).
 - The agent highlights confirmed bugs and material uncertainties. An unverified or skipped review is never presented as a pass.
 
 Use `givi auto-review status` to inspect configuration, or `givi auto-review disable` to turn it off. [Scope, recovery and testing](docs/automatic-review.md).

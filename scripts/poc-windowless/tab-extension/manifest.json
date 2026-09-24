@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "GiviLoop inactive-tab feasibility probe",
+  "version": "0.0.1",
+  "permissions": ["tabs", "scripting"],
+  "host_permissions": ["https://giviloop-poc.test/*"],
+  "background": { "service_worker": "worker.js" }
+}

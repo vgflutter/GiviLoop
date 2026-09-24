@@ -128,6 +128,7 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
   const status = {
     startedAt: new Date().toISOString(), endedAt: undefined as string | undefined,
     provider, mode, headless, background, transport: headless ? "playwright" : "native-cdp", profile: userDataDir,
+    visibility: headless ? "headless" : background ? "windowless" : "foreground",
     requestSha256: createHash("sha256").update(requestText).digest("hex"),
     phase: "launching", outcome: "running", submitted: false as boolean | "unknown",
     errorCode: undefined as string | undefined,
@@ -191,7 +192,7 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
       }
     };
     await waitForChatInput(page, 15_000, provider, beforeCookieChoice);
-    // Some desktop window managers restore minimized windows during input.
+    // Recheck the background contract after interacting with page setup.
     if (background) await minimizeBrowser(context, page);
     checkCancelled();
     assertChatOrigin(page, providerUrl);
@@ -238,8 +239,7 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
     }
     status.submitted = true;
     checkCancelled();
-    // Some Linux window managers restore a minimized window when Chrome
-    // focuses the composer/send control. Keep generation in the background.
+    // Confirm that sending has not changed the background page's window state.
     if (background) await minimizeBrowser(context, page);
     if (mode === "submit") {
       status.outcome = "submitted";
@@ -278,9 +278,10 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
     status.outcome = "failed";
     status.endedAt = new Date().toISOString();
     status.errorCode = failure instanceof BrowserRunError ? failure.code : "BROWSER_OPERATION_FAILED";
-    if (status.submitted === false && ["ACCESS_CHALLENGE", "ACCESS_CHALLENGE_LOOP", "ACCESS_DENIED", "LOGIN_REQUIRED", "BROWSER_SETUP_REQUIRED", "BROWSER_INTERACTION_REQUIRED"].includes(status.errorCode)) {
+    if (status.submitted === false && ["ACCESS_CHALLENGE", "ACCESS_CHALLENGE_LOOP", "ACCESS_DENIED", "LOGIN_REQUIRED", "BROWSER_SETUP_REQUIRED", "BROWSER_INTERACTION_REQUIRED", "WINDOWLESS_UNAVAILABLE"].includes(status.errorCode)) {
       status.outcome = "needs-attention";
       status.attention = "Use givi status to inspect this run. Use givi open to finish login/setup, close that Chrome, then givi resume. For an upload, resume --foreground. Automatic review did not bring Chrome forward.";
+      if (status.errorCode === "WINDOWLESS_UNAVAILABLE") status.attention = "Update Chrome and GiviLoop, or explicitly resume --foreground. No visible fallback was opened.";
     }
     if (status.errorCode === "ACCESS_CHALLENGE" || status.errorCode === "ACCESS_CHALLENGE_LOOP") status.verificationRequired = true;
     try { record(status.phase); } catch { /* Preserve the operation's original error. */ }

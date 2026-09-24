@@ -327,7 +327,7 @@ async function enableAutomaticFixture(f) {
   assert.equal(enabled.code, 0, enabled.stderr);
 }
 
-test('automatic MCP review uses minimized Chrome, sends once and is deduplicated across CLI/MCP', { timeout: 35000 }, async t => {
+test('automatic MCP review uses windowless Chrome, sends once and is deduplicated across CLI/MCP', { timeout: 35000 }, async t => {
   const f = otherFixture(t, webCases[1]);
   f.env.GIVILOOP_TEST_CAPTURE_WINDOW_STATE = '1';
   await enableAutomaticFixture(f);
@@ -341,12 +341,14 @@ test('automatic MCP review uses minimized Chrome, sends once and is deduplicated
   const browserStatus = JSON.parse(readFileSync(path.join(f.latest().dir, 'browser-status.json')));
   assert.equal(browserStatus.background, true);
   assert.equal(browserStatus.headless, false);
+  assert.equal(browserStatus.visibility, 'windowless');
   const duplicate = await cli(f, 'auto-review', ['run', '--task-id', 'different-task', '--checks', 'passed', '--file', 'sum.js']);
   assert.equal(JSON.parse(duplicate.stdout).reason, 'unchanged-snapshot');
   writeFileSync(path.join(f.repo, 'sum.js'), 'export const sum = xs => xs.reduce((a,b) => a+b, 0);\n');
   const afterFix = await client.callTool({ name: 'givi_auto_review', arguments: input });
   assert.equal(JSON.parse(afterFix.content[0].text).reason, 'task-already-reviewed');
   assert.equal(f.events().filter(e => e.action === 'submit').length, 1);
+  assert.equal(f.events().find(e => e.action === 'submit').windowState, 'windowless');
 });
 
 test('automatic login attention suspends new tasks; explicit resume sends the original request once', { timeout: 35000 }, async t => {
@@ -842,16 +844,31 @@ test('native maximized window can enter background mode and closes cleanly', {ti
   assert.equal(profileOwnerPid(profile),undefined);
 });
 
-test('native background launch creates its initial page already minimized', {timeout:30000}, async t=>{
+test('native background pages have no OS window across restart, new pages and concurrent launches', {timeout:60000}, async t=>{
   const f=fixture(t),profile=path.join(f.root,'background-start-profile');
-  const {launchChatBrowser,profileOwnerPid}=await import(pathToFileURL(path.join(distDir,'providers/browser-runtime.js')));
-  const c=await launchChatBrowser(profile,false,true);
-  try {
-    const pages=c.pages();assert.equal(pages.length,1);assert.equal(pages[0].url(),'about:blank');
-    const session=await c.newCDPSession(pages[0]);
-    const {bounds}=await session.send('Browser.getWindowForTarget');
-    assert.equal(bounds.windowState,'minimized','launch must not rely on a later minimize call');
-    await session.detach();
-  }finally{await c.close();}
-  assert.equal(profileOwnerPid(profile),undefined);
+  const {launchChatBrowser,profileOwnerPid,minimizeBrowser,showBrowser}=await import(pathToFileURL(path.join(distDir,'providers/browser-runtime.js')));
+  const previousAttach=process.env.PW_CHROMIUM_ATTACH_TO_OTHER;
+  for(let cycle=0;cycle<3;cycle++) {
+    const contexts=await Promise.allSettled([profile,path.join(f.root,'parallel-profile')].map(p=>launchChatBrowser(p,false,true)));
+    try {
+      for(const result of contexts) assert.equal(result.status,'fulfilled',String(result.reason));
+      for(const {value:c} of contexts) {
+        const pages=c.pages();assert.equal(pages.length,1);assert.equal(pages[0].url(),'about:blank');
+        const p=pages[0];
+        const session=await c.newCDPSession(p);
+        await assert.rejects(session.send('Browser.getWindowForTarget'),/No window found|Browser window not found/);
+        await session.detach();
+        await minimizeBrowser(c,p);
+        await assert.rejects(showBrowser(c,p),/BROWSER_INTERACTION_REQUIRED/);
+        if(cycle===0) await c.addCookies([{name:'windowless-session',value:'persistent',url:'https://example.test/',secure:true,httpOnly:true,expires:Math.floor(Date.now()/1000)+3600}]);
+        assert.equal((await c.cookies('https://example.test/')).find(c=>c.name==='windowless-session')?.value,'persistent');
+        const next=await c.newPage();
+        await minimizeBrowser(c,next);
+        await next.close();
+      }
+      assert.equal(process.env.PW_CHROMIUM_ATTACH_TO_OTHER,previousAttach,'Concurrent launches must restore the caller environment');
+    } finally { await Promise.all(contexts.filter(c=>c.status==='fulfilled').map(c=>c.value.close())); }
+    assert.equal(profileOwnerPid(profile),undefined);
+    assert.equal(JSON.parse(readFileSync(path.join(profile,'Default','Preferences'))).profile.exit_type,'Normal');
+  }
 });

@@ -2058,7 +2058,7 @@ Important options:
   --mode prefill|submit|auto
                             auto (default) waits and saves the answer; prefill only fills; submit sends.
   --headless                Diagnostic option; currently blocked by ChatGPT verification. Use --background.
-  --background              Default for auto: start minimized, pause if human attention is needed.
+  --background              Default for auto: hidden Chrome page; pause if human attention is needed.
                             Requires auto; incompatible with --headless. OS focus behavior can vary.
   --foreground              Explicit visible browser for setup, verification and ZIP uploads.
   --verification-wait-ms N  Wait for your verification tap (default 180000 headed, 0 headless; maximum 900000).

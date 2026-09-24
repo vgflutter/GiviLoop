@@ -20,6 +20,10 @@
   },
   "files": [
     "dist",
+    "browser-extension/manifest.json",
+    "browser-extension/worker.js",
+    "browser-extension/offscreen.html",
+    "browser-extension/parser.js",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
@@ -35,6 +39,7 @@
     "docs/troubleshooting.md",
     "docs/usage.md",
     "docs/web-providers.md",
+    "docs/windowless-browser.md",
     "examples/double-check/sum.ts",
     "examples/double-check/verify.mjs"
   ],
@@ -47,7 +52,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "playwright": "^1.61.1"
+    "playwright": "1.61.1"
   },
   "repository": {
     "type": "git",

@@ -120,7 +120,7 @@ Double Check of current Git changes:
 
 ### Run Automatically in the Background
 
-Auto reviews use a minimized standard Chrome by default. `--background` also overrides a saved foreground preference:
+Auto reviews use standard Chrome with a hidden review page by default. `--background` also overrides a saved foreground preference:
 
     npm run givi -- ask --repo /path/to/repo --file server.js \
       --question "Review this code and suggest minimal fixes" \
@@ -132,7 +132,7 @@ For an existing request:
 
 Visible sessions use native Chrome with a temporary loopback DevTools connection and the existing dedicated profile. One-shot CLI runs wait for the owned browser process to exit on completion or cancellation; MCP can retain an idle healthy browser. See [provider results and limitations](web-providers.md).
 
-When provider access is available, auto mode fills the prompt, sends once, waits for a completed answer and saves it. No clipboard interaction is required. This is now the default delivery mode. Chrome starts without a startup window; its review target is created minimized in the background. Quiet mode pauses for login, cookie choices, human verification and ZIP uploads instead of deliberately showing Chrome. Use `givi status`, `givi open`, quit Chrome after setup, then `givi resume`. ZIP uploads require explicit `--foreground`. The OS may still cause a transient focus change during input; GiviLoop verifies minimization and stops if unsupported.
+When provider access is available, auto mode fills the prompt, sends once, waits for a completed answer and saves it. No clipboard interaction is required. Chrome starts without a startup window, loads GiviLoop's bundled offscreen extension in the dedicated profile and creates a hidden top-level review page. Quiet mode pauses for login, cookie choices, human verification and ZIP uploads. Use `givi status`, `givi open`, quit Chrome after setup, then `givi resume`. ZIP uploads require explicit `--foreground`. `WINDOWLESS_UNAVAILABLE` stops without opening a visible fallback. The implementation is validated on macOS; Windows/Linux VM checks are pending. [Requirements and evidence](windowless-browser.md).
 
 CLI closes Chrome on completion. MCP retains healthy quiet sessions for up to 60 seconds idle, at most two dedicated profiles, and starts each review in a fresh conversation. It closes failed/cancelled sessions and closes retained sessions on disconnect. `givi_release_browser_sessions` closes idle sessions before manual login. Concurrent use of the same profile is refused.
 

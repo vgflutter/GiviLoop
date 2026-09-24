@@ -335,7 +335,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             background: {
               type: "boolean",
-              description: "Defaults true for auto mode: start minimized and pause for attention without deliberately showing Chrome. Set false explicitly for visible login/verification/uploads. Requires mode=auto and headless=false. MCP reuses healthy sessions for up to 60 seconds.",
+              description: "Defaults true for auto mode: use a hidden page in ordinary Chrome with the bundled offscreen extension. Pause for attention; no visible fallback. Set false explicitly for visible login/verification/uploads. Requires mode=auto and headless=false. MCP reuses healthy sessions for up to 60 seconds.",
             },
             browserProfile: {
               type: "string",
@@ -409,7 +409,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             background: {
               type: "boolean",
-              description: "Defaults true for auto mode: start minimized and pause for attention without deliberately showing Chrome. Set false explicitly for visible login/verification/uploads. Requires mode=auto and headless=false. MCP reuses healthy sessions for up to 60 seconds.",
+              description: "Defaults true for auto mode: use a hidden page in ordinary Chrome with the bundled offscreen extension. Pause for attention; no visible fallback. Set false explicitly for visible login/verification/uploads. Requires mode=auto and headless=false. MCP reuses healthy sessions for up to 60 seconds.",
             },
             browserProfile: {
               type: "string",
@@ -540,7 +540,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             background: {
               type: "boolean",
-              description: "Defaults true for auto mode: start minimized and pause for attention without deliberately showing Chrome. Set false explicitly for visible login/verification/uploads. Requires mode=auto and headless=false. MCP reuses healthy sessions for up to 60 seconds.",
+              description: "Defaults true for auto mode: use a hidden page in ordinary Chrome with the bundled offscreen extension. Pause for attention; no visible fallback. Set false explicitly for visible login/verification/uploads. Requires mode=auto and headless=false. MCP reuses healthy sessions for up to 60 seconds.",
             },
             browserProfile: {
               type: "string",
@@ -801,7 +801,7 @@ function buildHelpToolResponse(): {
           "Recommended IDE-agent flows:",
           "- Onboarding: run givi setup in a terminal for prerequisites, provider/login, an MCP snippet and an optional public demo.",
           "- Setup saves per-project provider/model/profile preferences. Explicit tool arguments override them; preparing context still never sends it.",
-          "- Auto web reviews default to a minimized browser. Human attention pauses the run: inspect givi_status, use givi_open only at the user's request, finish setup and quit Chrome, then givi_resume. Uploads require foreground=true on resume.",
+          "- Auto web reviews default to a hidden page in ordinary Chrome. Human attention pauses the run: inspect givi_status, use givi_open only at the user's request, finish setup and quit Chrome, then givi_resume. Uploads require foreground=true on resume.",
           "- givi_cancel requests cooperative cancellation, without retracting submitted prompts. Resume refuses submitted, uncertain or changed requests.",
           "- Healthy background sessions are reused within this MCP process, with separate chats, up to two profiles and 60 seconds idle. givi_release_browser_sessions closes idle sessions before manual login; disconnect closes them too.",
           "- Evidence: after independent checks, use givi_record_finding with the original review runId and source/contract/test files, status, reason and evidence. Use givi_list_findings to see stale decisions. These tools record your assessment, not certified test results.",
@@ -823,7 +823,7 @@ function buildHelpToolResponse(): {
           "- Prefer git-only when the current changes provide enough context. Web token savings are not measured.",
           "",
           "Important modes:",
-          "- background=true with mode=auto runs the complete exchange in standard Chrome with its window minimized. CLI: --background --mode auto.",
+          "- background=true with mode=auto runs the complete exchange in standard Chrome using a hidden page and the bundled offscreen extension. CLI: --background --mode auto.",
           "- headless=true with mode=auto runs without a window; the provider can deny headless access. Do not combine headless and background.",
           "- For initial sign-in use givi browser login in regular Chrome, then close that dedicated browser before sending. Use givi doctor to check the profile.",
           "- modelSelection=require verifies the exact model label and its visible selection before sending. With prefer, an explicit warning reports any fallback.",

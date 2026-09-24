@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "GiviLoop offscreen feasibility probe",
+  "version": "0.0.1",
+  "description": "Local experiment: supply an offscreen frame before a hidden CDP target.",
+  "permissions": ["offscreen"],
+  "background": { "service_worker": "worker.js" }
+}

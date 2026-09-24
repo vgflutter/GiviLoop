@@ -2,8 +2,10 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createServer } from "node:net";
 import { setTimeout, clearTimeout } from "node:timers";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { chromium, type Browser, type BrowserContext } from "playwright";
+import { chromium, type Browser, type BrowserContext, type CDPSession, type Page } from "playwright";
 
 export function chromeExecutable(): string | undefined {
   const candidates = process.env.GIVILOOP_CHROME_PATH ? [process.env.GIVILOOP_CHROME_PATH]
@@ -16,6 +18,98 @@ export function chromeExecutable(): string | undefined {
 
 export class NativeChromeError extends Error {
   constructor(public readonly code: string, message: string) { super(message); }
+}
+
+const extensionPath = fileURLToPath(new URL("../../browser-extension", import.meta.url));
+const hiddenContexts = new WeakMap<BrowserContext, { session: CDPSession; targets: WeakMap<Page, string> }>();
+const unavailable = () => new NativeChromeError("WINDOWLESS_UNAVAILABLE",
+  "Chrome could not maintain a windowless review. Update Chrome and GiviLoop, or explicitly use --foreground. No visible fallback was opened; check the run's submitted status before retrying.");
+
+// Playwright 1.61.1 exposes CDP hidden targets (type `other`) through this
+// internal opt-in. Pin that dependency and retain regression coverage. Reference
+// counting preserves the caller's environment across simultaneous MCP launches.
+let attaching = 0, previousAttach: string | undefined;
+async function attachHidden<T>(operation: () => Promise<T>): Promise<T> {
+  if (attaching++ === 0) {
+    previousAttach = process.env.PW_CHROMIUM_ATTACH_TO_OTHER;
+    process.env.PW_CHROMIUM_ATTACH_TO_OTHER = "1";
+  }
+  try { return await operation(); }
+  finally {
+    if (--attaching === 0) {
+      if (previousAttach === undefined) delete process.env.PW_CHROMIUM_ATTACH_TO_OTHER;
+      else process.env.PW_CHROMIUM_ATTACH_TO_OTHER = previousAttach;
+    }
+  }
+}
+
+async function assertWindowless(context: BrowserContext, page: Page): Promise<void> {
+  const state = hiddenContexts.get(context);
+  const targetId = state?.targets.get(page);
+  if (!state || !targetId || page.isClosed()) throw unavailable();
+  try {
+    await state.session.send("Browser.getWindowForTarget", { targetId });
+  } catch (error) {
+    if (/No window found|Browser window not found/i.test(String(error))) return;
+    throw unavailable();
+  }
+  throw unavailable();
+}
+
+async function prepareWindowless(browser: Browser, context: BrowserContext): Promise<void> {
+  const session = await browser.newBrowserCDPSession();
+  try {
+    // Supported CDP loading, unlike --load-extension on branded Chrome. Load
+    // only our bundled extension into this owned, dedicated profile. Its fixed
+    // public key keeps its ID stable across package installation paths.
+    const { id } = await session.send("Extensions.loadUnpacked", { path: extensionPath });
+    let ready = false;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const { targetInfos } = await session.send("Target.getTargets");
+      if (targetInfos.some(t => t.url === `chrome-extension://${id}/offscreen.html`)) {
+        const worker = context.serviceWorkers().find(w => w.url() === `chrome-extension://${id}/worker.js`);
+        if (worker && await worker.evaluate("globalThis.giviloopOffscreen?.ready === true")) { ready = true; break; }
+      }
+      await delay(100);
+    }
+    if (!ready) throw unavailable();
+    // An unexpected restored page must not become the review destination.
+    // In particular, never silently use or minimize an existing visible tab.
+    if (context.pages().length) throw unavailable();
+    const state = { session, targets: new WeakMap<Page, string>() };
+    hiddenContexts.set(context, state);
+    context.newPage = () => attachHidden(async () => {
+      const { targetId } = await session.send("Target.createTarget", {
+        url: "about:blank", hidden: true, background: true,
+      });
+      try {
+        for (let attempt = 0; attempt < 100; attempt++) {
+          for (const page of context.pages()) {
+            if (state.targets.has(page)) continue;
+            const target = await context.newCDPSession(page);
+            try {
+              if ((await target.send("Target.getTargetInfo")).targetInfo.targetId !== targetId) continue;
+              await page.setViewportSize({ width: 1400, height: 1000 });
+              state.targets.set(page, targetId);
+              await assertWindowless(context, page);
+              return page;
+            } finally { await target.detach().catch(() => {}); }
+          }
+          await delay(50);
+        }
+        throw unavailable();
+      } catch {
+        await session.send("Target.closeTarget", { targetId }).catch(() => {});
+        throw unavailable();
+      }
+    });
+    await context.newPage();
+    // Keep the creator session attached for the lifetime of its hidden pages.
+  } catch {
+    hiddenContexts.delete(context);
+    await session.detach().catch(() => {});
+    throw unavailable();
+  }
 }
 
 async function within<T>(promise: Promise<T>, milliseconds: number): Promise<T | undefined> {
@@ -61,11 +155,12 @@ async function launch(profile: string, background: boolean): Promise<BrowserCont
   const child = spawn(executable, [
     `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, "--remote-debugging-address=127.0.0.1",
     "--no-first-run", "--no-default-browser-check",
-    // --start-minimized still activates Chrome on macOS. Start without a
-    // window, then create an explicitly background/minimized target over CDP.
-    ...(background ? ["--no-startup-window"] : ["--new-window", "about:blank"]),
+    // No startup window. The extension provides Chrome's required initial
+    // frame target; reviews run in separate hidden top-level web pages.
+    ...(background ? ["--no-startup-window", "--enable-unsafe-extension-debugging"] : ["--new-window", "about:blank"]),
   ], { stdio: ["ignore", "ignore", "pipe"] });
   let finished = false, startupError: Error | undefined, browser: Browser | undefined, closePromise: Promise<void> | undefined;
+  let context: BrowserContext | undefined;
   let startupLogs = "";
   let announce: (endpoint: string) => void;
   const endpoint = new Promise<string>(resolve => { announce = resolve; });
@@ -96,6 +191,7 @@ async function launch(profile: string, background: boolean): Promise<BrowserCont
         // Chrome helpers can inherit stderr and outlive the browser process.
         // Do not keep the caller alive waiting for those helpers to close it.
         child.stderr.destroy();
+        if (context) hiddenContexts.delete(context);
         unregister(close);
       }
     })();
@@ -116,21 +212,9 @@ async function launch(profile: string, background: boolean): Promise<BrowserCont
     startupLogs = "";
     child.stderr.resume();
     browser = await chromium.connectOverCDP(announced, { timeout: 15000 });
-    const context = browser.contexts()[0];
+    context = browser.contexts()[0];
     if (!context) throw new NativeChromeError("BROWSER_LAUNCH_FAILED", "Chrome did not expose its dedicated profile.");
-    if (background) {
-      const session = await browser.newBrowserCDPSession();
-      try {
-        await session.send("Target.createTarget", {
-          url: "about:blank", newWindow: true, background: true, windowState: "minimized",
-        });
-        if (!context.pages().some(page => page.url() === "about:blank")) {
-          await context.waitForEvent("page", { timeout: 10_000, predicate: page => page.url() === "about:blank" });
-        }
-      } catch {
-        throw new NativeChromeError("BACKGROUND_UNAVAILABLE", "Chrome could not create a background window. Update Chrome or retry without --background. No prompt was sent.");
-      } finally { await session.detach().catch(() => {}); }
-    }
+    if (background) await prepareWindowless(browser, context);
     // On a CDP connection Playwright's default close only disconnects. Own and
     // await Chrome's real shutdown so cookies flush and the profile lock releases.
     context.close = close;
@@ -142,4 +226,4 @@ async function launch(profile: string, background: boolean): Promise<BrowserCont
   }
 }
 
-export const nativeChrome = { launch };
+export const nativeChrome = { launch, isWindowless: (context: BrowserContext) => hiddenContexts.has(context), assertWindowless };

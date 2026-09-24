@@ -63,6 +63,13 @@ export async function launchChatBrowser(profile: string, headless: boolean, back
 }
 
 export async function minimizeBrowser(context: BrowserContext, page: Page): Promise<void> {
+  if (nativeChrome.isWindowless(context)) {
+    try { await nativeChrome.assertWindowless(context, page); return; }
+    catch (error) {
+      if (error instanceof NativeChromeError) throw new BrowserRunError(error.code, error.message);
+      throw error;
+    }
+  }
   const session = await context.newCDPSession(page);
   try {
     const { windowId, bounds: initial } = await session.send("Browser.getWindowForTarget");
@@ -95,6 +102,8 @@ export async function minimizeBrowser(context: BrowserContext, page: Page): Prom
 }
 
 export async function showBrowser(context: BrowserContext, page: Page): Promise<void> {
+  if (nativeChrome.isWindowless(context)) throw new BrowserRunError("BROWSER_INTERACTION_REQUIRED",
+    "This review has no visible window. Use givi open for login/setup, close that browser, then resume; use resume --foreground for uploads.");
   const session = await context.newCDPSession(page);
   try {
     const { windowId } = await session.send("Browser.getWindowForTarget");

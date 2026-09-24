@@ -39,7 +39,7 @@ givi status
 
 `review` explicitly prepares **and sends**. Without saved preferences it uses ChatGPT. `ask`, `prepare` and `archive` still only prepare unless `--send` is present. `send` uses the saved provider; a prepared destination mismatch fails before sending. Manual preference requires `prepare` / `copy` / `ingest`. `setup --foreground` saves visible mode; `setup --background` restores quiet mode. Local reviews use the saved runtime/model without a browser.
 
-Auto web reviews default to minimized Chrome. Login, verification, cookie choices and uploads pause as `needs-attention` **before submission**, without deliberately showing Chrome. The provider controls whether verification recurs. Quiet checks/reviews do not wait for human verification even if a longer verification timeout is supplied.
+Auto web reviews default to ordinary Chrome with a hidden review page. The bundled offscreen extension is loaded automatically into the dedicated profile. Login, verification, cookie choices and uploads pause as `needs-attention` **before submission**. The provider controls whether verification recurs. Quiet checks/reviews do not wait for human verification even if a longer verification timeout is supplied. Windowless startup failure stops without a visible fallback. [Tested environments and requirements](windowless-browser.md).
 
 ```sh
 givi status --json

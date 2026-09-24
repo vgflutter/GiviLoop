@@ -35,13 +35,11 @@ Do not remove `SingletonLock` while Chrome owns the profile, copy active profile
 
 ## Background versus headless
 
-`--background --mode auto` starts normal Chrome without a startup window, then creates a background target already minimized and verifies its state. This avoids the usual foreground launch before minimization. As of 0.6.0 this is the default. Setup/verification/uploads pause with `needs-attention`; quiet mode does not deliberately restore the window. ZIP uploads need explicit `--foreground`. It requires a desktop session capable of minimizing windows.
+`--background --mode auto` starts normal Chrome without a startup window, loads the bundled offscreen extension into GiviLoop's dedicated profile and creates a hidden review page. This is the default for automatic reviews. Setup/verification/uploads pause with `needs-attention`; ZIP uploads need explicit `--foreground`. If the required Chrome/DevTools functionality is unavailable, `WINDOWLESS_UNAVAILABLE` stops the attempt without a visible fallback.
 
-On Linux, a bare Xvfb display does not provide a window manager and can produce `BACKGROUND_UNAVAILABLE`. The browser/package CI uses Xvfb plus Openbox and waits for window management to become available before testing native background sessions. A desktop requirement is separate from the website's access restrictions.
+macOS validation includes ten ordinary-Chrome restarts and two real anonymous ChatGPT MCP reviews with no visible browser windows or foreground activation sampled. Windows/Linux VM and authenticated windowless checks are pending. The earlier minimized transport could flash during input on some desktops; those historical results do not describe the current hidden-target implementation. [Detailed evidence and requirements](windowless-browser.md).
 
-Some Linux window managers restore Chrome when the composer/send control receives focus. GiviLoop checks and minimizes the window again after sending, keeping the response wait in the background; a transient window during that interaction remains possible on those desktops.
-
-On macOS, two real Claude MCP reviews completed with this startup path while monitoring the foreground application: neither GiviLoop-owned Chrome instance became foreground. The test does not independently certify every fullscreen/Spaces arrangement. Since 0.6.0, setup, human verification and ZIP uploads require explicit foreground action. Healthy MCP sessions can reuse one Chrome process for successive reviews. Normal background startup does not reactivate VS Code or another app on a timer, so it does not pull you away from an app you choose to use during generation.
+Linux still requires a graphical session for ordinary Chrome. Browser/package CI uses Xvfb plus Openbox because the suite also tests explicit foreground/maximized windows. This desktop requirement is separate from website access restrictions. Browser sandboxing and the native credential store remain enabled.
 
 `--headless --mode auto` does not create a visible window. **It is currently unusable for live ChatGPT reviews:** the release trial received HTTP 403, and the 22 September checks were challenged with both authenticated and anonymous profiles. No prompt was sent. Use `--background`. GiviLoop stops on the block; it does not silently switch modes, hide automation flags, retry rate limits, or bypass an account challenge.
 
@@ -77,6 +75,7 @@ If the loop recurs, stop clicking. Check access with `givi browser login` in reg
 | `BROWSER_INTERACTION_REQUIRED` | Quiet ZIP upload paused before opening Chrome. Use `givi resume --foreground`, or use inline text via `ask --file`. |
 | `BROWSER_LAUNCH_FAILED` | Check the executable, permissions, and profile health with `doctor`. |
 | `BACKGROUND_UNAVAILABLE` | The window could not be minimized. Use visible mode in that environment. No prompt was sent. |
+| `WINDOWLESS_UNAVAILABLE` | Hidden-page setup or verification failed. Update Chrome and GiviLoop; managed policies may restrict extension loading. Inspect the recorded submission state before an explicit foreground retry. No visible fallback is opened. |
 | `NAVIGATION_FAILED` / `NETWORK_ERROR` | Navigation failed before submission, including its one allowed retry. Check connectivity and open the site with `browser login`. |
 | `ACCESS_DENIED` / `ACCESS_CHALLENGE` | The provider denied access or requested verification. Stop and inspect the site in regular Chrome; there is no automatic bypass. |
 | `ACCESS_CHALLENGE_LOOP` | The site repeatedly challenged the browser during the same wait. Stop repeating the tap; inspect access in regular Chrome. No prompt was sent. |

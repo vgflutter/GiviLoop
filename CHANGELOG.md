@@ -2,6 +2,13 @@
 
 Release summaries. Historical validation reports and full development notes remain in Git history. For current commands and limitations, see the [usage reference](docs/usage.md) and [provider results](docs/web-providers.md).
 
+## Unreleased
+
+- Background CLI/MCP reviews use hidden top-level pages in ordinary Chrome, supported by a bundled offscreen extension loaded through DevTools. Saved dedicated profiles and native cookie encryption are preserved; no manual extension installation is required.
+- Windowless startup failure stops with `WINDOWLESS_UNAVAILABLE` instead of opening a minimized or visible fallback. Login, verification and uploads retain their explicit foreground workflow.
+- Verify hidden pages across restarts, concurrent profiles, new pages, session reuse and installed-package execution. Pin Playwright 1.61.1 for its internal hidden-target attachment support.
+- macOS validation includes ten ordinary-Chrome restarts and two real anonymous ChatGPT MCP reviews with no visible browser window or foreground activation sampled. Windows/Linux VM and authenticated windowless provider checks remain pending. [Evidence and limits](docs/windowless-browser.md).
+
 ## 0.8.2
 
 - Finding writes require an explicit review ID: CLI `--run-id`, MCP `runId`. Missing/invalid IDs fail before changing a ledger; reads retain their latest-run default.

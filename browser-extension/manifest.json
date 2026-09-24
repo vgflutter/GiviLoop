@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "GiviLoop background workspace",
+  "version": "1.0.0",
+  "minimum_chrome_version": "116",
+  "description": "Local offscreen document support for GiviLoop's dedicated browser profile.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnN/cMtij+2MdeVqEee13gNBk0bNIA4CbbWNdsf42MgaFSs4rMQke0045I/jdHxPpF6rrg/QD/5hOoHwB7s0UjIfrDPx9DuR2Um8T4qDSJMcf4yr54ZZsyAJDs+Zv567IrXUcBlW4HK+d9uWCmTY9t0C9TqWoEf9IXusG8o6O6j5BlkEXw3n6Qq2OIHBySq9cCupmPw6v36Cd0Bym21vocj6JDGNil+oQwIF0VFLibq+goudpgZbVTDDnqZAGUFZsd9YqmDunLbFqgOqYYYNYsXF8r/LkH/AnaOkJYinUJOBI4CpqyTwCyz2LI6tE0EcdX3KmGke5PtyR539inOXP8wIDAQAB",
+  "permissions": ["offscreen"],
+  "background": { "service_worker": "worker.js" }
+}

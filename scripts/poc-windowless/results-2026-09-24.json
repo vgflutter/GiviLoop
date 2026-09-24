@@ -1,0 +1,293 @@
+{
+  "recordedDate": "2026-09-24",
+  "scope": "Local synthetic fixtures only; provider authentication and live reviews not tested",
+  "environment": {
+    "os": "macOS 27.0",
+    "arch": "arm64",
+    "node": "22.21.1",
+    "playwright": "1.61.1"
+  },
+  "repository": {
+    "branch": "main",
+    "baseCommit": "ca67955",
+    "changes": "local untracked experiments under scripts/poc-windowless only"
+  },
+  "validation": {
+    "unitTests": 225,
+    "passed": 225,
+    "failed": 0,
+    "syntax": "JavaScript and Python passed",
+    "swiftObserver": "compiled and executed",
+    "ownedBrowserProcessesRemaining": 0
+  },
+  "limitations": [
+    "Windows and Linux not executed",
+    "Visibility is sampled for owned browser PIDs, not an absolute no-flash guarantee",
+    "Dock/taskbar icons and windows owned by other processes are not measured",
+    "Ordinary Chrome with the offscreen extension is not tested",
+    "Inactive-tab startup preparation can show a window; native messaging is not implemented",
+    "Carbonyl package uses Chromium 111; POSIX terminal helper does not implement Windows ConPTY",
+    "Firefox prerequisite failed; Browsh itself was not executed"
+  ],
+  "experiments": [
+    {
+      "name": "installed-chrome-control",
+      "status": "failed",
+      "completedJobs": 1,
+      "recordedEntries": 2,
+      "sourceReport": ".giviloop/windowless-poc/result.json",
+      "sourceSha256": "5154e881c994534fa25a16d0004f98bc3220aae8c1e5828abd83db0aef9aa1e3",
+      "browserVersions": [
+        "Chrome/153.0.8010.53"
+      ],
+      "observer": {
+        "status": "completed",
+        "enumerationFailures": 0,
+        "foregroundSamples": 0,
+        "intervalMs": 20,
+        "maxOnscreenWindows": 0,
+        "maxOwnedWindows": 0,
+        "maxSampleGapMs": 115.48387497896329,
+        "observedProcessCount": 2,
+        "ownedProcessSamples": 395,
+        "platform": "darwin",
+        "samples": 402
+      },
+      "successfulCheckCounts": {
+        "syntheticCookieReadable": 1,
+        "storagePreservedAcrossRestart": 0,
+        "singleSend": 1,
+        "noTargetWindow": 1
+      },
+      "cooperativeProcessExits": 1,
+      "failure": "cdpSession.send: Protocol error (Target.createTarget): Hidden target can be created only when remote debugging is enabled",
+      "startedAt": "2026-09-24T20:46:56.433Z",
+      "finishedAt": "2026-09-24T20:47:08.463Z"
+    },
+    {
+      "name": "testing-chrome-control",
+      "status": "failed",
+      "completedJobs": 1,
+      "recordedEntries": 2,
+      "sourceReport": ".giviloop/windowless-poc/testing-baseline.json",
+      "sourceSha256": "76c5c81830077419c8fde6117a8ad9b869ab457e5a3492d186c558609719bee0",
+      "browserVersions": [
+        "Chrome/149.0.7827.55"
+      ],
+      "observer": {
+        "status": "completed",
+        "enumerationFailures": 0,
+        "foregroundSamples": 0,
+        "intervalMs": 20,
+        "maxOnscreenWindows": 0,
+        "maxOwnedWindows": 0,
+        "maxSampleGapMs": 97.01141665573232,
+        "observedProcessCount": 2,
+        "ownedProcessSamples": 423,
+        "platform": "darwin",
+        "samples": 504
+      },
+      "successfulCheckCounts": {
+        "syntheticCookieReadable": 1,
+        "storagePreservedAcrossRestart": 0,
+        "singleSend": 1,
+        "noTargetWindow": 1
+      },
+      "cooperativeProcessExits": 1,
+      "failure": "cdpSession.send: Protocol error (Target.createTarget): Hidden target can be created only when remote debugging is enabled",
+      "startedAt": "2026-09-24T21:03:12.852Z",
+      "finishedAt": "2026-09-24T21:03:27.384Z"
+    },
+    {
+      "name": "offscreen-extension",
+      "status": "passed",
+      "completedJobs": 10,
+      "recordedEntries": 10,
+      "sourceReport": ".giviloop/windowless-poc/offscreen-dom-parser.json",
+      "sourceSha256": "978c703ce16abc2551cac408d9024c9164a65227b449e7487889e6b3900615ec",
+      "browserVersions": [
+        "Chrome/149.0.7827.55"
+      ],
+      "observer": {
+        "status": "completed",
+        "enumerationFailures": 0,
+        "foregroundSamples": 0,
+        "intervalMs": 20,
+        "maxOnscreenWindows": 0,
+        "maxOwnedWindows": 0,
+        "maxSampleGapMs": 103.49904166650958,
+        "observedProcessCount": 10,
+        "ownedProcessSamples": 388,
+        "platform": "darwin",
+        "samples": 397
+      },
+      "successfulCheckCounts": {
+        "inputVerified": 10,
+        "syntheticCookieReadable": 10,
+        "storagePreservedAcrossRestart": 9,
+        "singleSend": 10,
+        "asynchronousResponse": 10,
+        "noTargetWindow": 10
+      },
+      "cooperativeProcessExits": 10,
+      "startedAt": "2026-09-24T21:26:37.114Z",
+      "finishedAt": "2026-09-24T21:26:48.750Z"
+    },
+    {
+      "name": "electron-hidden-window",
+      "status": "passed",
+      "completedJobs": 10,
+      "recordedEntries": 10,
+      "sourceReport": ".giviloop/windowless-poc/electron.json",
+      "sourceSha256": "18947c80f762d79c1fa867eb196e2562a94dedacb20933ee347dcaf5423e99e6",
+      "browserVersions": [
+        "Chrome/152.0.7977.130"
+      ],
+      "observer": {
+        "status": "completed",
+        "enumerationFailures": 0,
+        "foregroundSamples": 0,
+        "intervalMs": 20,
+        "maxOnscreenWindows": 0,
+        "maxOwnedWindows": 1,
+        "maxSampleGapMs": 97.41095834760927,
+        "observedProcessCount": 10,
+        "ownedProcessSamples": 242,
+        "platform": "darwin",
+        "samples": 245
+      },
+      "successfulCheckCounts": {
+        "inputVerified": 10,
+        "syntheticCookieReadable": 10,
+        "storagePreservedAcrossRestart": 9,
+        "singleSend": 10,
+        "asynchronousResponse": 10
+      },
+      "cooperativeProcessExits": 10,
+      "startedAt": "2026-09-24T21:26:35.603Z",
+      "finishedAt": "2026-09-24T21:26:42.816Z"
+    },
+    {
+      "name": "inactive-tabs",
+      "status": "passed",
+      "completedJobs": 20,
+      "recordedEntries": 20,
+      "sourceReport": ".giviloop/windowless-poc/inactive-tabs.json",
+      "sourceSha256": "7e0d5ac6a65bbc4ff1faec28e4916b934e11f52542584da46773f85cbe22b01e",
+      "browserVersions": [
+        "Chrome/149.0.7827.55"
+      ],
+      "observer": {
+        "status": "completed",
+        "enumerationFailures": 0,
+        "foregroundSamples": 0,
+        "intervalMs": 20,
+        "maxOnscreenWindows": 1,
+        "maxOwnedWindows": 6,
+        "maxSampleGapMs": 110.14908333891071,
+        "observedProcessCount": 2,
+        "ownedProcessSamples": 329,
+        "platform": "darwin",
+        "samples": 330
+      },
+      "successfulCheckCounts": {
+        "inputVerified": 20,
+        "syntheticCookieReadable": 20,
+        "storagePreservedAcrossRestart": 10,
+        "singleSend": 20,
+        "asynchronousResponse": 20,
+        "activeTabUnchanged": 20,
+        "browserWindowsUnchanged": 20,
+        "sameBrowserProcess": 20
+      },
+      "startedAt": "2026-09-24T21:32:05.072Z",
+      "finishedAt": "2026-09-24T21:32:14.540Z"
+    },
+    {
+      "name": "carbonyl-terminal",
+      "status": "passed",
+      "completedJobs": 10,
+      "recordedEntries": 10,
+      "sourceReport": ".giviloop/windowless-poc/carbonyl.json",
+      "sourceSha256": "4869857e51ef909f973e6be3471ba4fd3976fe90f8d8f3f50a857c281504c4d3",
+      "browserVersions": [
+        "Google Chrome/111.0.5511.1 (Carbonyl)"
+      ],
+      "observer": {
+        "status": "completed",
+        "enumerationFailures": 0,
+        "foregroundSamples": 0,
+        "intervalMs": 20,
+        "maxOnscreenWindows": 0,
+        "maxOwnedWindows": 0,
+        "maxSampleGapMs": 118.70216668467037,
+        "observedProcessCount": 10,
+        "ownedProcessSamples": 315,
+        "platform": "darwin",
+        "samples": 333
+      },
+      "successfulCheckCounts": {
+        "inputVerified": 10,
+        "syntheticCookieReadable": 10,
+        "storagePreservedAcrossRestart": 9,
+        "singleSend": 10,
+        "asynchronousResponse": 10
+      },
+      "cooperativeProcessExits": 10,
+      "startedAt": "2026-09-24T21:27:13.020Z",
+      "finishedAt": "2026-09-24T21:27:23.125Z"
+    },
+    {
+      "name": "firefox-prerequisite",
+      "status": "failed",
+      "completedJobs": 0,
+      "recordedEntries": 1,
+      "sourceReport": ".giviloop/windowless-poc/firefox.json",
+      "sourceSha256": "1ad3c3b930da550cf04c2a6dedd374115cf2e4328dfd62b693b1b780111688e3",
+      "browserVersions": [],
+      "observer": {
+        "status": "not-run"
+      },
+      "failure": "Playwright Firefox headless startup timed out after 180 seconds; sandbox-extension and SWGL framebuffer diagnostics; no fixture reached. Current harness timeout is 30 seconds.",
+      "startedAt": "2026-09-24T21:12:22.679Z",
+      "finishedAt": "2026-09-24T21:15:22.693Z"
+    },
+    {
+      "name": "inactive-tabs-before-page-routing-fix",
+      "status": "failed",
+      "completedJobs": 10,
+      "recordedEntries": 10,
+      "sourceReport": ".giviloop/windowless-poc/inactive-tabs-navigation-failure.json",
+      "sourceSha256": "33e5d889709247eed841cad78a36c3efb9febdfee91eb04c8b1442b402e0f4be",
+      "browserVersions": [
+        "Chrome/149.0.7827.55"
+      ],
+      "observer": {
+        "status": "completed",
+        "enumerationFailures": 0,
+        "foregroundSamples": 0,
+        "intervalMs": 20,
+        "maxOnscreenWindows": 1,
+        "maxOwnedWindows": 3,
+        "maxSampleGapMs": 127.27850000374019,
+        "observedProcessCount": 2,
+        "ownedProcessSamples": 214,
+        "platform": "darwin",
+        "samples": 215
+      },
+      "successfulCheckCounts": {
+        "inputVerified": 10,
+        "syntheticCookieReadable": 10,
+        "storagePreservedAcrossRestart": 0,
+        "singleSend": 10,
+        "asynchronousResponse": 10,
+        "activeTabUnchanged": 10,
+        "browserWindowsUnchanged": 10,
+        "sameBrowserProcess": 10
+      },
+      "failure": "page.goto: net::ERR_NAME_NOT_RESOLVED at https://giviloop-poc.test/",
+      "startedAt": "2026-09-24T21:27:13.041Z",
+      "finishedAt": "2026-09-24T21:27:19.568Z"
+    }
+  ]
+}

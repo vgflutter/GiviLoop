@@ -83,7 +83,7 @@ The suggested NUL separator is ambiguous for arbitrary string IDs: `(tenant="a\0
 
 The live sessions exposed three implementation issues, now covered by regression tests:
 
-- Chrome restored maximized windows after login; macOS acknowledged minimize without changing state. Background mode now restores a normal window before minimizing and verifies the transition.
+- Chrome restored maximized windows after login; macOS acknowledged minimize without changing state. The earlier minimized transport restored a normal window before minimizing and verified the transition. The current background transport uses hidden pages; its validation is recorded separately.
 - Claude's optional-cookie overlay intercepted the send action. Its explicit reject control is now handled before filling/sending. The initial uncertain-send case was inspected at `/new` with no assistant response before another test was started.
 - Both sites placed response actions outside the text container. Claude now scopes its action bar to the same assistant row and reads final prose separately from thinking status. DeepSeek verifies the assistant-content marker and the same response's copy/regenerate tooltips; minimized Chrome requires a hover without waiting for animation-frame stability. This never clicks regenerate. Earlier completed responses were inspected before further test submissions; timeout failures were retained in diagnostics rather than reported as successful runs.
 
@@ -108,7 +108,7 @@ npm run givi -- browser check --provider deepseek-web
 node scripts/web-acceptance.mjs --provider deepseek-web
 ```
 
-Repeat with `claude-web`. A check with `ready: true` and `submitted: false` only proves the composer is accessible; the real two-phase test and manual response assessment above are still required. If a verification loop occurs, stop and report the status instead of repeatedly clicking or relaunching. Use `--background`, not `--headless`, for normal reviews; the window starts minimized without activation; setup, verification or uploads pause for explicit foreground action. OS-specific focus changes remain possible.
+Repeat with `claude-web`. A check with `ready: true` and `submitted: false` only proves the composer is accessible; the real two-phase test and manual response assessment above are still required. If a verification loop occurs, stop and report the status instead of repeatedly clicking or relaunching. Use `--background` for normal reviews. Its current implementation creates a hidden Chrome page; setup, verification or uploads pause for explicit foreground action. The historical provider results above used the earlier transport; see the separate [windowless results and OS coverage](windowless-browser.md).
 
 **Readiness:** ChatGPT, anonymous Gemini and signed-in Claude have evidence for a limited pilot. DeepSeek delivery now works, but its corrected-code quality control failed; treat its findings as unverified suggestions, never automatic changes. All website adapters remain experimental. Passing these small cases is not a general model-quality benchmark or validation of long reasoning, specific subscription models, all locales or quota recovery. A stable multi-provider claim requires those remaining paths to be exercised and any observed failures corrected.
 

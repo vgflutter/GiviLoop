@@ -51,6 +51,7 @@ export async function checkBrowserAccess(profile: string | undefined = undefined
   const verificationWaitMs = background ? 0 : requestedWait;
   const report = {
     provider, checkedAt: new Date().toISOString(), profile: path.resolve(profile), headless, background, transport: headless ? "playwright" : "native-cdp",
+    visibility: headless ? "headless" : background ? "windowless" : "foreground",
     ready: false, submitted: false, sessionCookieReadable: provider === "chatgpt-web" ? false : null as boolean | null,
     authentication: "unknown", errorCode: undefined as string | undefined,
     verificationRequired: false, verificationCompleted: false,
