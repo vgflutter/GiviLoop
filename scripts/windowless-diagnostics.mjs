@@ -61,13 +61,27 @@ try {
     console.log(JSON.stringify({ label, ...await page.evaluate(() => ({ sent: window.sent, keys: window.keys,
       response: document.querySelector('output').textContent })) }));
   }
-  await page.getByRole('button').click({ force: true }); // Synthetic, isolated diagnostic only.
+  await page.getByRole('button').click({ force: true, timeout: 2000 }).catch(error => console.log(error.message)); // Synthetic, isolated diagnostic only.
   await inputCheck('direct-pointer');
   await session.send('Page.setWebLifecycleState', { state: 'active' });
   await inputCheck('navigation-active');
   await session.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 750, deviceScaleFactor: 1, mobile: false });
   await inputCheck('navigation-resize');
-  await session.send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 1, height: 1, scale: 1 } });
+  const editing = await page.locator('textarea').evaluate(node => {
+    node.focus(); node.select();
+    const result = document.execCommand('insertText', false, 'Synthetic DOM editing');
+    return { result, value: node.value };
+  });
+  await page.getByRole('button').evaluate(node => node.click());
+  await new Promise(resolve => setTimeout(resolve, 250));
+  console.log(JSON.stringify({ label: 'dom-editing-and-activation', editing, ...await page.evaluate(() => ({ sent: window.sent,
+    response: document.querySelector('output').textContent })) }));
+  let screenshotTimer;
+  try { await Promise.race([
+    session.send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 1, height: 1, scale: 1 } }),
+    new Promise((_, reject) => { screenshotTimer = setTimeout(() => reject(new Error('first-frame timeout')), 3000); }),
+  ]); } catch (error) { console.log(error.message); }
+  finally { clearTimeout(screenshotTimer); }
   await inputCheck('navigation-first-frame');
   const creator = await context.browser().newBrowserCDPSession();
   process.env.PW_CHROMIUM_ATTACH_TO_OTHER = '1';
