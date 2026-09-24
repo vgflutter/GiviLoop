@@ -32,6 +32,29 @@ try {
   await session.send('Page.stopScreencast');
   await page.getByRole('button').press('Enter', { timeout: 2000 });
   console.log(JSON.stringify({ label: 'keyboard-activation', sent: await page.evaluate(() => window.sent ?? 0) }));
+  await context.route('**/*', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html>
+    <textarea></textarea><button>Send</button><output></output><script>
+    window.keys=[];window.addEventListener('keydown',e=>keys.push({key:e.key,tag:e.target.tagName,trusted:e.isTrusted}));
+    document.querySelector('button').onclick=e=>{
+      window.sent=(window.sent||0)+1;
+      document.querySelector('output').textContent='pending';
+      setTimeout(()=>document.querySelector('output').textContent='done',100);
+    };</script>` }));
+  await page.goto('https://example.test/');
+  await page.locator('textarea').fill('Synthetic request');
+  await page.getByRole('button').press('Enter');
+  await new Promise(resolve => setTimeout(resolve, 1500));
+  console.log(JSON.stringify({ label: 'after-navigation', ...await page.evaluate(() => ({
+    sent: window.sent, keys: window.keys, active: document.activeElement?.tagName,
+    response: document.querySelector('output').textContent,
+  })) }));
+  await session.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+  await page.getByRole('button').press('Enter');
+  await new Promise(resolve => setTimeout(resolve, 1500));
+  console.log(JSON.stringify({ label: 'navigation-refocus', ...await page.evaluate(() => ({
+    sent: window.sent, keys: window.keys, active: document.activeElement?.tagName,
+    response: document.querySelector('output').textContent,
+  })) }));
   await session.detach();
 } finally {
   await context.close();
