@@ -1,4 +1,6 @@
 // Read-only observer for PoC evidence; not part of the browser implementation.
+// --activate-control explicitly foregrounds only the owned positive-control
+// window, to verify focus detection. Never used for background measurements.
 // Records counts/PIDs only: no window titles, screenshots, or browser content.
 import AppKit
 import Foundation
@@ -14,6 +16,8 @@ var observedPids = Set<Int>()
 var enumerationFailures = 0
 var maxSampleGapMs = 0.0
 var previousSample = ProcessInfo.processInfo.systemUptime
+let activateControl = CommandLine.arguments.contains("--activate-control")
+var activated = Set<Int>()
 print("ready")
 fflush(stdout)
 while !FileManager.default.fileExists(atPath: stopFile) {
@@ -29,6 +33,14 @@ while !FileManager.default.fileExists(atPath: stopFile) {
         let onscreen = owned.filter {
             ($0[kCGWindowIsOnscreen as String] as? Bool) == true &&
             (($0[kCGWindowAlpha as String] as? Double) ?? 1) > 0
+        }
+        if activateControl {
+            for window in onscreen {
+                if let pid = window[kCGWindowOwnerPID as String] as? Int, !activated.contains(pid) {
+                    NSRunningApplication(processIdentifier: pid_t(pid))?.activate(options: [.activateIgnoringOtherApps])
+                    activated.insert(pid)
+                }
+            }
         }
         let front = Int(NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1)
         if pids.contains(front) { foregroundSamples += 1 }

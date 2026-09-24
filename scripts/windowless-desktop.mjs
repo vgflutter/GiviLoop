@@ -58,7 +58,8 @@ if (process.argv.includes('--foreground-control')) {
     async function phase(name, args) {
       const pids = path.join(temporary, `${name}.pids`), stop = path.join(temporary, `${name}.stop`);
       writeFileSync(pids, '');
-      const observer = start(observerCommand, [...observerPrefix, pids, stop]);
+      const observer = start(observerCommand, [...observerPrefix, pids, stop,
+        ...(process.platform === 'darwin' && name === 'control' ? ['--activate-control'] : [])]);
       let workload;
       try {
         await bounded((async () => {
