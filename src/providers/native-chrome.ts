@@ -92,21 +92,29 @@ async function prepareWindowless(browser: Browser, context: BrowserContext): Pro
       try {
         for (let attempt = 0; attempt < 100; attempt++) {
           for (const page of context.pages()) {
-            if (state.targets.has(page)) continue;
-            const target = await context.newCDPSession(page);
+            if (page.isClosed() || state.targets.has(page)) continue;
+            let target: CDPSession | undefined;
+            let matched = false;
             try {
+              target = await context.newCDPSession(page);
               if ((await target.send("Target.getTargetInfo")).targetInfo.targetId !== targetId) continue;
+              matched = true;
               await page.setViewportSize({ width: 1400, height: 1000 });
               state.targets.set(page, targetId);
               await assertWindowless(context, page);
               return page;
-            } finally { await target.detach().catch(() => {}); }
+            } catch (error) {
+              // Chrome can delete a candidate before Playwright removes it
+              // from pages(). Only ignore that discovery race; errors on the
+              // matched review target must still fail closed.
+              if (!matched && (page.isClosed() || /Protocol error \(Target\.(?:attachToTarget|getTargetInfo)\): No target with given id found/.test(String(error)))) continue;
+              throw error;
+            } finally { await target?.detach().catch(() => {}); }
           }
           await delay(50);
         }
         throw unavailable();
-      } catch (error) {
-        if (process.env.GIVILOOP_TEST_WINDOWLESS_DIAGNOSTICS === '1') console.error('Hidden target diagnostic:', error);
+      } catch {
         await session.send("Target.closeTarget", { targetId }).catch(() => {});
         throw unavailable();
       }

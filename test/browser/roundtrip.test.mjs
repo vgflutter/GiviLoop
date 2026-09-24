@@ -896,3 +896,40 @@ test('native background pages have no OS window across restart, new pages and co
     assert.equal(JSON.parse(readFileSync(path.join(profile,'Default','Preferences'))).profile.exit_type,'Normal');
   }
 });
+
+test('native background pages ignore a target closed during discovery', {timeout:30000}, async t=>{
+  const f=fixture(t);
+  const {launchChatBrowser,minimizeBrowser}=await import(pathToFileURL(path.join(distDir,'providers/browser-runtime.js')));
+  const context=await launchChatBrowser(path.join(f.root,'closing-candidate'),false,true);
+  const creator=await context.browser().newBrowserCDPSession();
+  const previousAttach=process.env.PW_CHROMIUM_ATTACH_TO_OTHER;
+  const attach=context.newCDPSession.bind(context);
+  try {
+    process.env.PW_CHROMIUM_ATTACH_TO_OTHER='1';
+    const pending=context.waitForEvent('page',{timeout:5000});
+    const {targetId}=await creator.send('Target.createTarget',{url:'about:blank',hidden:true,background:true});
+    const stale=await pending;
+    if(previousAttach===undefined) delete process.env.PW_CHROMIUM_ATTACH_TO_OTHER;
+    else process.env.PW_CHROMIUM_ATTACH_TO_OTHER=previousAttach;
+    let raced=false;
+    context.newCDPSession=async page=>{
+      if(page===stale&&!raced) {
+        raced=true;
+        await creator.send('Target.closeTarget',{targetId});
+      }
+      return attach(page);
+    };
+    const page=await context.newPage();
+    assert.equal(raced,true,'Close an unregistered candidate between enumeration and CDP attachment');
+    assert.notEqual(page,stale);
+    await minimizeBrowser(context,page);
+    assert.equal(context.pages().length,2);
+    assert.equal(process.env.PW_CHROMIUM_ATTACH_TO_OTHER,previousAttach);
+  } finally {
+    if(previousAttach===undefined) delete process.env.PW_CHROMIUM_ATTACH_TO_OTHER;
+    else process.env.PW_CHROMIUM_ATTACH_TO_OTHER=previousAttach;
+    context.newCDPSession=attach;
+    await creator.detach().catch(()=>{});
+    await context.close();
+  }
+});

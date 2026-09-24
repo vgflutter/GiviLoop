@@ -32,8 +32,6 @@ jobs:
       - run: npm test
 
   browser-and-package:
-    env:
-      GIVILOOP_TEST_WINDOWLESS_DIAGNOSTICS: '1'
     strategy:
       fail-fast: false
       matrix:
