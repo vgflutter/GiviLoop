@@ -6,11 +6,18 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 
+const { values } = parseArgs({ options: {
+  'foreground-control': { type: 'boolean' },
+  'live-provider': { type: 'string' },
+} });
+const liveProvider = values['live-provider'];
+assert.ok(!liveProvider || ['chatgpt-web', 'claude-web', 'gemini-web', 'deepseek-web'].includes(liveProvider), 'Unknown live provider');
 const root = fileURLToPath(new URL('..', import.meta.url));
 const temporary = mkdtempSync(path.join(os.tmpdir(), 'giviloop-desktop-'));
-if (process.argv.includes('--foreground-control')) {
+if (values['foreground-control']) {
   const { nativeChrome } = await import('../dist/providers/native-chrome.js');
   let context;
   try {
@@ -28,7 +35,8 @@ if (process.argv.includes('--foreground-control')) {
   const destination = path.join(root, '.giviloop/diagnostics');
   mkdirSync(destination, { recursive: true });
   const report = { platform: process.platform, os: os.version(), release: os.release(), arch: os.arch(), node: process.version,
-    checkedAt: new Date().toISOString(), status: 'failed' };
+    checkedAt: new Date().toISOString(), status: 'failed',
+    mode: liveProvider ? 'live' : 'fixtures', ...(liveProvider ? { provider: liveProvider, source: 'public synthetic fixtures only' } : {}) };
   function start(command, args, options = {}) {
     const child = spawn(command, args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], ...options });
     const result = { stdout: '', stderr: '', code: null };
@@ -71,7 +79,7 @@ if (process.argv.includes('--foreground-control')) {
         const hook = new URL('../test/fixtures/browser-observer.mjs', import.meta.url).href;
         workload = start(process.execPath, args, { env: { ...process.env, GIVILOOP_TEST_OBSERVER_PIDS: pids,
           NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${JSON.stringify(hook)}` } });
-        const result = await bounded(workload.done, 240000);
+        const result = await bounded(workload.done, liveProvider && name === 'background' ? 480000 : 240000);
         writeFileSync(path.join(destination, `desktop-${name}.log`), result.stdout + result.stderr);
         assert.equal(result.code, 0, result.stdout + result.stderr);
         if (name === 'control') report.chrome = JSON.parse(result.stdout.trim()).chrome;
@@ -95,8 +103,10 @@ if (process.argv.includes('--foreground-control')) {
     await phase('control', [fileURLToPath(import.meta.url), '--foreground-control']);
     assert.ok(report.control.maxOnscreenWindows > 0, 'Observer must detect the deliberately visible Chrome window');
     assert.ok(report.control.foregroundSamples > 0, 'Observer must detect the deliberately foreground Chrome window');
-    await phase('background', ['--test', '--test-reporter=tap', '--test-concurrency=1',
-      '--test-name-pattern=--background|windowless input|background pages|automatic MCP review uses windowless|saved defaults and MCP reuse', 'test/browser/roundtrip.test.mjs']);
+    await phase('background', liveProvider
+      ? ['scripts/web-acceptance.mjs', '--provider', liveProvider, '--browser-profile', path.join(temporary, 'live-profile')]
+      : ['--test', '--test-reporter=tap', '--test-concurrency=1',
+        '--test-name-pattern=--background|windowless input|background pages|automatic MCP review uses windowless|saved defaults and MCP reuse', 'test/browser/roundtrip.test.mjs']);
     assert.equal(report.background.maxOnscreenWindows, 0, 'Background browser became visible');
     assert.equal(report.background.foregroundSamples, 0, 'Background browser took desktop focus');
     report.status = 'passed';
@@ -104,7 +114,7 @@ if (process.argv.includes('--foreground-control')) {
     report.error = error.message;
     process.exitCode = 1;
   } finally {
-    writeFileSync(path.join(destination, 'windowless-desktop.json'), JSON.stringify(report, null, 2) + '\n');
+    writeFileSync(path.join(destination, liveProvider ? `windowless-live-${liveProvider}.json` : 'windowless-desktop.json'), JSON.stringify(report, null, 2) + '\n');
     console.log(JSON.stringify(report, null, 2));
     rmSync(temporary, { recursive: true, force: true, maxRetries: 5 });
   }
