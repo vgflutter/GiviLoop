@@ -39,7 +39,7 @@ npm run givi -- setup --provider claude-web --non-interactive
 npm run givi -- demo
 ```
 
-Setup saves your choice and generates `.giviloop/mcp.json` for your MCP client; editor settings are untouched. The live demo sends only the bundled public example, saves the actual answer and runs its independent reproduction. If login is needed, it prints the next commands; finish with `npm run givi -- demo --finish` after resuming. [First use and commands](docs/before-commit.md).
+Setup saves your choice and generates `.giviloop/mcp.json` for your MCP client; editor settings are untouched. The live demo sends only the bundled public example, saves the actual answer and runs its independent reproduction. If login is needed, it prints the next commands; finish with `npm run givi -- demo --finish` after resuming. [First use and commands](docs/double-check.md).
 
 ChatGPT can also work without login when its website offers a usable chat. Use `--provider chatgpt-web` to choose it; availability and limits remain controlled by the site.
 
@@ -60,7 +60,7 @@ ChatGPT can also work without login when its website offers a usable chat. Use `
 
 For Claude, use `npm run givi -- browser login --provider claude-web`, quit that Chrome, then `npm run givi -- browser check --provider claude-web`. Substitute another name from the table as needed. New adapters accept inline text (`ask --file` / `prepare`); automated ZIP uploads and model selection remain ChatGPT-only. [Commands and validation](docs/web-providers.md).
 
-Manual `copy --open` / `ingest` works with all four prompt formats. [Local models](docs/local-engines.md) and [Ollama](docs/ollama.md) remain available; [DwarfStar](docs/dwarfstar.md) trained-model validation is pending.
+Manual `copy --open` / `ingest` works with all four prompt formats. [Local models](docs/local-engines.md) and [Ollama](docs/local-engines.md#ollama) remain available; [DwarfStar](docs/local-engines.md#dwarfstar) trained-model validation is pending.
 
 ## Stay in your editor
 
@@ -97,11 +97,41 @@ and tests; report confirmed, dismissed or unverified, with reasons.
 Do not edit files.
 ```
 
-Use the [ready-to-paste **before-commit recipe**](docs/before-commit.md#use-it-on-your-next-real-change) for your next change. The coding agent performs the verification. Ask it to **save findings with `givi_record_finding`**, including the required review `runId`, source/contract/test files, a reason and evidence. Finding writes never default to the latest review; new reviews keep earlier findings separate. `givi_list_findings` reports confirmed, dismissed or unverified, with decision history; changed referenced files make the assessment stale. `givi_prepare_recheck` prepares a new request for one finding with current source, without sending it or applying fixes. [CLI equivalents and examples](docs/setup-and-evidence.md).
+Use the [ready-to-paste **before-commit recipe**](docs/double-check.md#use-it-on-your-next-real-change) for your next change. The coding agent performs the verification. Ask it to **save findings with `givi_record_finding`**, including the required review `runId`, source/contract/test files, a reason and evidence. Finding writes never default to the latest review; new reviews keep earlier findings separate. `givi_list_findings` reports confirmed, dismissed or unverified, with decision history; changed referenced files make the assessment stale. `givi_prepare_recheck` prepares a new request for one finding with current source, without sending it or applying fixes. [CLI equivalents and examples](docs/setup-and-evidence.md).
 
 Finish with **`givi_export_report`** or **`givi report`**: a local Markdown report with confirmed findings, dismissed advice, uncertainties and recorded evidence, ready to inspect before attaching to a PR. GiviLoop records the agent's assessment; the exporter does not execute or certify tests. An empty finding list is not proof of clean code. [Full Double Check recipe](docs/double-check.md).
 
 See a [real report from developing GiviLoop](docs/examples/double-check-report.md): one corrupted-ledger bug independently reproduced and fixed, and one CLI error-handling claim dismissed after testing.
+
+## Install the GiviLoop review skill
+
+The official GiviLoop skill, [`giviloop-review`](skills/giviloop-review/SKILL.md), teaches an agent to request a second review and verify each finding against code and tests, preserving the review's `runId`. It supports configured local models and web chats. Total token savings are not yet measured.
+
+**Prerequisites:** install/build GiviLoop separately (Node.js 20+ and Git), configure a reviewer with `givi setup --repo /path/to/project`, and connect MCP as described above if using MCP tools. Local review needs a running runtime and installed model; web review needs Chrome and any required login. Installing the skill does not install GiviLoop, configure MCP, enable automatic reviews, or authorize sending code. Use it within the user's authorized scope.
+
+**Public command — after publication:** once this skill is published on the default branch of `vgflutter/GiviLoop`, run this from the project where you want the skill installed:
+
+```sh
+npx skills add vgflutter/GiviLoop --skill giviloop-review --agent codex --copy -y
+```
+
+Replace `codex` with your supported agent. This installs at project scope; no `--global` is needed. The public source has not been tested with this unpublished change.
+
+**Local verification:** discovery and installation were checked with `skills@1.7.0` in a temporary consumer outside the GiviLoop checkout. The installed `SKILL.md` matched the source exactly. To reproduce, replace `/absolute/path/to/GiviLoop` below with your checkout:
+
+```sh
+skill_check_dir=$(mktemp -d)
+cd "$skill_check_dir"
+export DISABLE_TELEMETRY=1
+export XDG_STATE_HOME="$skill_check_dir/state"
+npx --yes skills@1.7.0 add /absolute/path/to/GiviLoop --list
+npx --yes skills@1.7.0 add /absolute/path/to/GiviLoop --skill giviloop-review --agent codex --copy -y
+npx --yes skills@1.7.0 list --agent codex
+```
+
+This keeps the installation and CLI state temporary and leaves personal agent settings untouched. After installation, ask: “Use giviloop-review to double-check my current changes with my configured reviewer; verify and record the findings without editing code.”
+
+See the [skills CLI documentation](https://skills.sh/docs/cli) and [source/installation options](https://github.com/vercel-labs/skills#install-a-skill). According to the [skills.sh FAQ](https://skills.sh/docs/faq), public installs with telemetry contribute to automatic leaderboard discovery; this telemetry-disabled local test does not establish a public listing. Publishing the skill in GitHub is still required; no npm release of GiviLoop is needed to distribute this Git-hosted skill.
 
 ## Make the double check automatic
 
@@ -125,7 +155,7 @@ Use `givi auto-review status` to inspect configuration, or `givi auto-review dis
 ## Install, learn, contribute
 
 - [Latest release and installable package](https://github.com/vgflutter/GiviLoop/releases/latest) · [CLI/MCP reference](docs/usage.md)
-- [Current provider results](docs/web-providers.md) · [Troubleshooting](docs/troubleshooting.md) · [0.8.2 review identity fix](docs/releases/0.8.2.md)
+- [Current provider results](docs/web-providers.md) · [Troubleshooting](docs/troubleshooting.md) · [0.8.2 review identity fix](CHANGELOG.md#082)
 - [Report a bug or a Double Check experience](https://github.com/vgflutter/GiviLoop/issues/new/choose) · [Contributing](CONTRIBUTING.md) · [Roadmap](docs/roadmap.md)
 
 Add `.giviloop/` to the reviewed repository's `.gitignore`: run files can contain source and prompts. Redaction is best effort. [Data handling](docs/usage.md#safety-and-legal).

@@ -23,8 +23,14 @@ OpenAI's European terms prohibit automatically or programmatically extracting da
 
 DeepSeek terms §3.5(3) also restrict capturing/copying service content with automated tools; Anthropic consumer terms §3.7 restrict automated access absent explicit permission or API access. Browser access without an API key is not an exemption. [DeepSeek terms](https://cdn.deepseek.com/policies/en-US/deepseek-terms-of-use.html), [Anthropic terms](https://www.anthropic.com/legal/consumer-terms).
 
-GiviLoop does not claim provider authorization for its browser integration. The manual workflow removes automatic website extraction; it is not a blanket certification for every account or use. Local inference is available for automatic reviews without this website dependency. [Detailed provider-access note](accesso-provider.md).
+GiviLoop does not claim provider authorization for its browser integration. The manual workflow removes automatic website extraction; it is not a blanket certification for every account or use. Local inference is available for automatic reviews without this website dependency.
 
 ## A useful comparison to contribute
 
 Try the same disclosed change with your normal review workflow and with GiviLoop. Record the context, reviewer, elapsed and active human time, confirmed bugs, false positives, and only the usage actually reported. Include the coding agent's verification work where observable. Keep unknown tokens and costs explicitly unknown. Never include credentials, private source or account screenshots in a public report.
+
+## Manual transfer and review identity
+
+Prepare with `givi ask`, `prepare` or `archive` without `--send`, then use `givi copy --open`. Paste, attach files, select the model and send on the website yourself. Copy its answer and run `givi ingest`. Keep the original `--run-id ID` for copy and ingest when handling multiple reviews; MCP uses `runId`.
+
+The MIT license covers GiviLoop, not access to third-party services. Local inference avoids website extraction, but runtime/model licenses still apply. Returning its answer to a cloud coding agent shares that text with the agent provider.

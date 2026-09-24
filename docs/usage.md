@@ -28,7 +28,7 @@ npm run givi -- ask --repo . --file examples/double-check/sum.ts \
   --browser-profile "$HOME/.giviloop/browser-profiles/chatgpt-anonymous"
 ```
 
-That profile remains anonymous only while nobody signs into it. Availability, quotas and features depend on the website; successful anonymous and authenticated reviews are recorded in the [current validation report](capabilities-and-validation-2026-09-22.md). Claude supports automated text reviews with a signed-in account; anonymous access redirected to login in live checks. See [current provider results](web-providers.md).
+That profile remains anonymous only while nobody signs into it. Availability, quotas and features depend on the website; Claude supports automated text reviews with a signed-in account; anonymous access redirected to login in live checks. See [provider results and limitations](web-providers.md).
 
 ## Optional automatic task-end review
 
@@ -56,7 +56,7 @@ MCP provides `givi_local_models`, `givi_ask_local_llm`, and `givi_send_to_local_
 
 Only loopback endpoints are accepted (`--base-url` / MCP `baseUrl`). The HTTP client uses direct local connections, refuses redirects, and does not use environment proxies. Ollama models advertising a cloud backend are rejected before source text is sent. The local runtime itself must be trusted and configured for local execution. Returning a review to a cloud coding agent still shares that response with the agent provider.
 
-See [llama.cpp, LM Studio and MLX setup](local-engines.md), [Ollama setup and limits](ollama.md), [DwarfStar setup and hardware requirements](dwarfstar.md), and [measured validation](local-inference-validation-2026-09-21.md).
+See [llama.cpp, LM Studio and MLX setup](local-engines.md), [Ollama setup and limits](local-engines.md#ollama), [DwarfStar setup and hardware requirements](local-engines.md#dwarfstar).
 
 For browser access, `givi browser check --provider NAME-web` inspects the dedicated profile without sending a prompt. Explicitly visible reviews wait for human verification and continue the same request; quiet mode returns an attention state without showing the window. `--verification-wait-ms` controls the wait. Repeated challenges stop explicitly, and the website can require verification again even with saved cookies. See [browser verification](troubleshooting.md#human-verification-and-repeated-challenges).
 
@@ -130,7 +130,7 @@ For an existing request:
 
     npm run givi -- send --repo /path/to/repo --mode auto --background
 
-Visible sessions use native Chrome with a temporary loopback DevTools connection and the existing dedicated profile. One-shot CLI runs wait for the owned browser process to exit on completion or cancellation; MCP can retain an idle healthy browser. This startup path resolved the observed 403 in real authenticated CLI/MCP trials; see the [validation](chatgpt-403-resolution-2026-09-21.md).
+Visible sessions use native Chrome with a temporary loopback DevTools connection and the existing dedicated profile. One-shot CLI runs wait for the owned browser process to exit on completion or cancellation; MCP can retain an idle healthy browser. See [provider results and limitations](web-providers.md).
 
 When provider access is available, auto mode fills the prompt, sends once, waits for a completed answer and saves it. No clipboard interaction is required. This is now the default delivery mode. Chrome starts without a startup window; its review target is created minimized in the background. Quiet mode pauses for login, cookie choices, human verification and ZIP uploads instead of deliberately showing Chrome. Use `givi status`, `givi open`, quit Chrome after setup, then `givi resume`. ZIP uploads require explicit `--foreground`. The OS may still cause a transient focus change during input; GiviLoop verifies minimization and stops if unsupported.
 
@@ -293,7 +293,7 @@ Use it only with repositories and providers you are comfortable sending to an ex
 
 Use provider web automation only if it is allowed by the provider terms and by the account or workspace policies that apply to you.
 
-The MIT license covers GiviLoop; it does not grant permission to automate third-party services. Each user is responsible for their accounts, content, and applicable provider terms. Choosing an optional integration does not establish that the provider permits it. For the web-chat workflow, `copy --open` followed by manual submission/copy and explicit `ingest` avoids automatic collection of website responses. See the [provider-access design note](accesso-provider.md) for the distinction between this workflow, supported automation, and liability notices.
+The MIT license covers GiviLoop; it does not grant permission to automate third-party services. Each user is responsible for their accounts, content, and applicable provider terms. Choosing an optional integration does not establish that the provider permits it. For the web-chat workflow, `copy --open` followed by manual submission/copy and explicit `ingest` avoids automatic collection of website responses. See the [costs and access guide](costs-and-access.md) for the distinction between this workflow, browser automation, and local inference.
 
 Before sending code or context to an external provider, make sure that doing so is allowed by your organization, client agreements, confidentiality obligations, and the provider terms that apply to your account.
 
@@ -309,4 +309,4 @@ Use `givi setup` for prerequisites, saved provider/preferences and an MCP snippe
 
 `givi demo --offline` runs a labeled authored example without an account. `givi demo` uses the saved provider and sends only the bundled public source, then runs its fixed reproduction. `givi demo --finish` completes an interrupted demo after explicit login/resume without another submission. It never executes model-generated code.
 
-`givi report [--run-id ID]` / MCP `givi_export_report` exports current effective findings, evidence and hashes to the run's `double-check.md`. `--stdout` prints without saving; `--json` returns metadata and Markdown. Saved reports protect their runs from automatic retention cleanup. Inspect before sharing; no publishing or general test execution occurs. See the [before-commit recipe and first-use walkthrough](before-commit.md).
+`givi report [--run-id ID]` / MCP `givi_export_report` exports current effective findings, evidence and hashes to the run's `double-check.md`. `--stdout` prints without saving; `--json` returns metadata and Markdown. Saved reports protect their runs from automatic retention cleanup. Inspect before sharing; no publishing or general test execution occurs. See the [before-commit recipe and first-use walkthrough](double-check.md).

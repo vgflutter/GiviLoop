@@ -49,7 +49,7 @@ Neither mode performs interactive login. They cannot be combined. `prefill` and 
 
 ## Human verification and repeated challenges
 
-In 0.3.0-rc.2, visible/background sessions use native Chrome connected over a temporary loopback DevTools endpoint. This resolved the observed 403 with the existing authenticated profile in two real CLI/MCP reviews. If you are using an earlier build, update and run `givi browser check`. Headless still received a challenge in the same session. See the [measured comparison](chatgpt-403-resolution-2026-09-21.md).
+Visible/background sessions use native Chrome connected over a temporary loopback DevTools endpoint. If access is blocked, update GiviLoop and run `givi browser check`. Headless received challenges in live checks; use background mode for automatic web reviews. See [provider results and limitations](web-providers.md).
 
 ```sh
 givi browser check
@@ -108,12 +108,12 @@ GiviLoop preserves pending and active runs. Older completed, inactive runs are p
 
 Include the GiviLoop version, OS, Node version, redacted command, error code, and relevant diagnostic fields. Remove private paths as needed. Do not share your browser profile, cookies, credentials, private source archives, or account screenshots containing sensitive information.
 
-The [provider access note](accesso-provider.md) explains the separate contractual considerations. A successful browser test does not establish provider authorization.
+The [provider access note](costs-and-access.md) explains the separate contractual considerations. A successful browser test does not establish provider authorization.
 
 
 ## Local inference
 
-For local runtimes use `givi doctor --provider NAME`, optionally with `--base-url`. Supported names are `ollama`, `dwarfstar`, `llama-cpp`, `lmstudio`, and `mlx`. Browser installation and login are irrelevant to these commands. See [Ollama](ollama.md), [DwarfStar](dwarfstar.md), and [the other local engines](local-engines.md) for their model/context requirements and errors.
+For local runtimes use `givi doctor --provider NAME`, optionally with `--base-url`. Supported names are `ollama`, `dwarfstar`, `llama-cpp`, `lmstudio`, and `mlx`. Browser installation and login are irrelevant to these commands. See [Ollama](local-engines.md#ollama), [DwarfStar](local-engines.md#dwarfstar), and [the other local engines](local-engines.md) for their model/context requirements and errors.
 
 Local run state is in `local-status.json`; token counts, model, timing and request/response hashes are in `local-usage.json`. On a storage failure, compare the recorded response hash with the saved response before associating usage with that text. A failed attempt does not establish a completed new review.
 
