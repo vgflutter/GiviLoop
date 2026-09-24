@@ -109,13 +109,13 @@ The official GiviLoop skill, [`giviloop-review`](skills/giviloop-review/SKILL.md
 
 **Prerequisites:** install/build GiviLoop separately (Node.js 20+ and Git), configure a reviewer with `givi setup --repo /path/to/project`, and connect MCP as described above if using MCP tools. Local review needs a running runtime and installed model; web review needs Chrome and any required login. Installing the skill does not install GiviLoop, configure MCP, enable automatic reviews, or authorize sending code. Use it within the user's authorized scope.
 
-**Public command — after publication:** once this skill is published on the default branch of `vgflutter/GiviLoop`, run this from the project where you want the skill installed:
+**Public installation:** the skill is published on the default branch of `vgflutter/GiviLoop`. Run this from the project where you want the skill installed:
 
 ```sh
 npx skills add vgflutter/GiviLoop --skill giviloop-review --agent codex --copy -y
 ```
 
-Replace `codex` with your supported agent. This installs at project scope; no `--global` is needed. The public source has not been tested with this unpublished change.
+Replace `codex` with your supported agent. This installs at project scope; no `--global` is needed. Installation from this GitHub source was verified with `skills@1.7.0` in a fresh temporary project; the installed skill matched the source exactly.
 
 **Local verification:** discovery and installation were checked with `skills@1.7.0` in a temporary consumer outside the GiviLoop checkout. The installed `SKILL.md` matched the source exactly. To reproduce, replace `/absolute/path/to/GiviLoop` below with your checkout:
 
@@ -131,7 +131,7 @@ npx --yes skills@1.7.0 list --agent codex
 
 This keeps the installation and CLI state temporary and leaves personal agent settings untouched. After installation, ask: “Use giviloop-review to double-check my current changes with my configured reviewer; verify and record the findings without editing code.”
 
-See the [skills CLI documentation](https://skills.sh/docs/cli) and [source/installation options](https://github.com/vercel-labs/skills#install-a-skill). According to the [skills.sh FAQ](https://skills.sh/docs/faq), public installs with telemetry contribute to automatic leaderboard discovery; this telemetry-disabled local test does not establish a public listing. Publishing the skill in GitHub is still required; no npm release of GiviLoop is needed to distribute this Git-hosted skill.
+See the [skills CLI documentation](https://skills.sh/docs/cli) and [source/installation options](https://github.com/vercel-labs/skills#install-a-skill). According to the [skills.sh FAQ](https://skills.sh/docs/faq), public installs with telemetry contribute to automatic leaderboard discovery; this telemetry-disabled local test does not establish a public listing. The GitHub installation is verified; a leaderboard listing has not been verified. No npm release of GiviLoop is needed to distribute this Git-hosted skill.
 
 ## Make the double check automatic
 
