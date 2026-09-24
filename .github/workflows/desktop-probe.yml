@@ -1,6 +1,17 @@
 name: Windowless desktop
 on:
   workflow_dispatch:
+    inputs:
+      live-provider:
+        description: 'Opt-in: send two public synthetic reviews to the selected real website'
+        type: choice
+        default: none
+        options:
+          - none
+          - chatgpt-web
+          - claude-web
+          - gemini-web
+          - deepseek-web
 permissions:
   contents: read
 jobs:
@@ -10,7 +21,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 5
+    timeout-minutes: 12
+    env:
+      GIVILOOP_LIVE_PROVIDER: ${{ inputs.live-provider }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,16 +47,28 @@ jobs:
         run: |
           xvfb-run -a bash -e <<'PROBE'
           openbox >/tmp/givi-probe-wm.log 2>&1 &
+          giviloop_wm_pid=$!
+          trap 'kill "$giviloop_wm_pid" 2>/dev/null || true' EXIT
+          giviloop_wm_ready=0
           for attempt in {1..50}; do
-            if wmctrl -m >/dev/null 2>&1; then break; fi
+            if wmctrl -m >/dev/null 2>&1; then giviloop_wm_ready=1; break; fi
             sleep 0.1
           done
-          node scripts/windowless-desktop.mjs
+          test "$giviloop_wm_ready" = 1
+          if [ "$GIVILOOP_LIVE_PROVIDER" != none ]; then
+            node scripts/windowless-desktop.mjs --live-provider "$GIVILOOP_LIVE_PROVIDER"
+          else
+            node scripts/windowless-desktop.mjs
+          fi
           PROBE
       - name: Diagnose Windows
         if: runner.os == 'Windows'
         run: |
-          node scripts/windowless-desktop.mjs
+          if ($env:GIVILOOP_LIVE_PROVIDER -ne 'none') {
+            node scripts/windowless-desktop.mjs --live-provider $env:GIVILOOP_LIVE_PROVIDER
+          } else {
+            node scripts/windowless-desktop.mjs
+          }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:

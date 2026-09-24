@@ -30,7 +30,7 @@ instead of opening a visible or minimized fallback.
   browser engine.
 - Linux still needs a graphical session. Windows Server 2025 x64 and Ubuntu
   x64 with X11/Openbox passed automated desktop checks in GitHub-hosted VMs.
-  Windows 11/ARM, Wayland and live provider accounts on those systems have not
+  Windows 11/ARM, Wayland and authenticated provider sessions on those systems have not
   been validated by those checks.
 
 `--headless` remains a separate diagnostic mode. Earlier live ChatGPT checks in
@@ -130,6 +130,72 @@ responses completed; the buggy fixture's two defects were identified and the
 corrected fixture returned `NO_CONFIRMED_FINDINGS`, consistent with all 18
 independent contract assertions. No project source was sent.
 
+## Real ChatGPT on Windows and Linux — 25 September 2026 (Europe/Rome)
+
+The [opt-in live run](https://github.com/vgflutter/GiviLoop/actions/runs/36071247050)
+completed both public synthetic reviews on each OS using fresh profiles and
+ordinary Chrome. Each run calibrated its observer with a deliberately visible,
+foreground Chrome window before launching the windowless review browser.
+
+| Environment | Completed real reviews | Background samples | Visible / foreground samples | Largest sampling gap |
+| --- | --- | --- | --- | --- |
+| Windows Server 2025 x64, Chrome 154.0.8037.58 | 2 | 1,770 | 0 / 0 | 219 ms |
+| Ubuntu X11 x64, Chrome 154.0.8037.57 | 2 | 1,353 | 0 / 0 | 51 ms |
+
+Each pair reused one owned browser process, sent once per review, preserved the
+synthetic source files and completed without an interactive verification request.
+Every launched PID was observed, with zero enumeration failures. Responses on
+both systems identified the introduced reservation-atomicity and tenant-isolation
+defects; both corrected-fixture responses returned `NO_CONFIRMED_FINDINGS`,
+consistent with the 18 independent contract assertions. The Windows buggy review
+also included a hypothetical warning about a future change; pipeline success
+does not mean every sentence of a model's review is a confirmed finding.
+
+These are anonymous ChatGPT results, not authenticated-account or other-provider
+validation. The sampling limits described above still apply. The artifacts retain
+responses, status files, contract-check results and desktop counts; they contain
+only these synthetic trials, not user profiles or credentials.
+
+A separate local Ubuntu 24.04 environment under OrbStack on the Apple Silicon
+Mac also passed the intercepted desktop suite (17 observed Chrome processes)
+and two real anonymous ChatGPT reviews. This used x86-64 translation, Node
+22.23.2, Chrome 154.0.8037.57 and X11/Openbox; it is additional evidence, not a
+replacement for the native x64 hosted VMs. The live run recorded 1,439 background
+samples, zero visible/foreground samples, zero enumeration failures and a maximum
+gap of about 101 ms. The observer's visible/focus positive control passed. Both
+responses matched the same buggy/fixed contract checks. Evidence remains local
+under `.giviloop/diagnostics/local-linux-live/`.
+
+A [later live repetition](https://github.com/vgflutter/GiviLoop/actions/runs/36073722201)
+did not complete on either hosted OS. Windows stopped during composer validation
+with `BROWSER_INTERACTION_REQUIRED`, `outcome: needs-attention` and
+`submitted: false`. The status does not distinguish an unsupported editor from
+an input overlay or a text mismatch. Linux recorded `submitted: true`, then
+`RESPONSE_TIMEOUT` after its 180-second response wait; the prompt was not retried.
+Neither run observed a visible window or foreground activation, and neither
+reported interactive verification. These attempts are not counted as completed
+reviews. Successful live trials demonstrate feasibility, not guaranteed
+unattended completion on every subsequent website session. Inspect the retained
+status before any explicit retry; a timeout does not mean the prompt was unsent.
+
+Follow-up stress testing also reproduced a separate Windows discovery race:
+Chrome could delete a candidate before Playwright removed it from its page list,
+causing `Target.attachToTarget: No target with given id found`. Discovery now
+ignores only a closed/deleted candidate before its identity is matched. Errors
+on the matched review target still stop. A real-browser regression closes a
+candidate between enumeration and attachment; it fails against the previous
+implementation and passes with the fix. The restart regression now creates and
+closes 100 additional hidden pages across ten concurrent-profile restart cycles.
+
+The [final regression run](https://github.com/vgflutter/GiviLoop/actions/runs/36073549023)
+passed all nine OS/Node unit jobs and both installed-package/desktop jobs with
+the fix: Windows passed 214 unit and 62 browser tests (12/1 POSIX-specific skips),
+and Linux passed 226 unit and 63 browser tests without skips. Both audits reported
+zero vulnerabilities. Each desktop observer saw all 32 launched background Chrome
+processes and zero visible/foreground samples; maximum sampling gaps were 172 ms
+on Windows and 50 ms on Linux. The live repetitions above are reported separately
+and are not silently treated as passed by this synthetic regression suite.
+
 ## Reproduce from a source checkout
 
 The normal package check installs the actual tarball into a temporary consumer,
@@ -141,6 +207,11 @@ npm run build
 npm test
 npm run test:package -- --browser
 ```
+
+For slower emulated VMs, `npm run test:package -- --browser --slow-vm` doubles
+only the overall unit/browser suite budgets (to eight and twenty minutes).
+Individual test deadlines, assertions and provider wait limits are unchanged.
+The package report records this option; native CI uses the normal budgets.
 
 The full browser suite deliberately opens windows for explicit foreground/login
 handoff checks. To run just the windowless regressions:
@@ -203,6 +274,30 @@ to `.giviloop/diagnostics/windowless-desktop.json` and `desktop-*.log`. A separa
 manual **Windowless desktop** workflow runs this check without the package suite.
 The normal **Tests** workflow also exercises Node 20/22/24 on all three OS families
 and keeps per-OS package reports, passing/skipped counts, TAP logs and audit output.
+
+To explicitly send the two public synthetic reviews with a fresh temporary
+profile and native observation on any of the three OS families:
+
+```sh
+node scripts/windowless-desktop.mjs --live-provider chatgpt-web
+```
+
+This uses the installed ordinary Chrome, never imports an existing profile, and
+removes the temporary profile when finished. Login/verification requirements
+fail the check and retain delivery evidence instead of retrying the submission.
+A failed positive-control calibration stops before any live prompt is sent.
+The report is `.giviloop/diagnostics/windowless-live-chatgpt-web.json`, alongside
+the `web-acceptance/` responses and `desktop-*.log` files. Test one workload at a
+time because the desktop log filenames are shared.
+
+The same explicit opt-in runs on both hosted VMs through the manual workflow:
+
+```sh
+gh workflow run desktop-probe.yml -f live-provider=chatgpt-web
+```
+
+Its default `live-provider=none` runs only the intercepted fixture tests. Normal
+push/PR tests never opt into real provider submissions.
 
 ## Implementation dependencies
 

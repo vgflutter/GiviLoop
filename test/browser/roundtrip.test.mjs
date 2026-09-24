@@ -866,11 +866,11 @@ test('native maximized window can enter background mode and closes cleanly', {ti
   assert.equal(profileOwnerPid(profile),undefined);
 });
 
-test('native background pages have no OS window across restart, new pages and concurrent launches', {timeout:60000}, async t=>{
+test('native background pages have no OS window across restart, new pages and concurrent launches', {timeout:120000}, async t=>{
   const f=fixture(t),profile=path.join(f.root,'background-start-profile');
   const {launchChatBrowser,profileOwnerPid,minimizeBrowser,showBrowser}=await import(pathToFileURL(path.join(distDir,'providers/browser-runtime.js')));
   const previousAttach=process.env.PW_CHROMIUM_ATTACH_TO_OTHER;
-  for(let cycle=0;cycle<3;cycle++) {
+  for(let cycle=0;cycle<10;cycle++) {
     const contexts=await Promise.allSettled([profile,path.join(f.root,'parallel-profile')].map(p=>launchChatBrowser(p,false,true)));
     try {
       for(const result of contexts) assert.equal(result.status,'fulfilled',`Restart ${cycle}: ${String(result.reason)}`);
@@ -884,13 +884,52 @@ test('native background pages have no OS window across restart, new pages and co
         await assert.rejects(showBrowser(c,p),/BROWSER_INTERACTION_REQUIRED/);
         if(cycle===0) await c.addCookies([{name:'windowless-session',value:'persistent',url:'https://example.test/',secure:true,httpOnly:true,expires:Math.floor(Date.now()/1000)+3600}]);
         assert.equal((await c.cookies('https://example.test/')).find(c=>c.name==='windowless-session')?.value,'persistent');
-        const next=await c.newPage();
-        await minimizeBrowser(c,next);
-        await next.close();
+        for(let pageIndex=0;pageIndex<5;pageIndex++) {
+          const next=await c.newPage();
+          await minimizeBrowser(c,next);
+          await next.close();
+        }
       }
       assert.equal(process.env.PW_CHROMIUM_ATTACH_TO_OTHER,previousAttach,'Concurrent launches must restore the caller environment');
     } finally { await Promise.all(contexts.filter(c=>c.status==='fulfilled').map(c=>c.value.close())); }
     assert.equal(profileOwnerPid(profile),undefined);
     assert.equal(JSON.parse(readFileSync(path.join(profile,'Default','Preferences'))).profile.exit_type,'Normal');
+  }
+});
+
+test('native background pages ignore a target closed during discovery', {timeout:30000}, async t=>{
+  const f=fixture(t);
+  const {launchChatBrowser,minimizeBrowser}=await import(pathToFileURL(path.join(distDir,'providers/browser-runtime.js')));
+  const context=await launchChatBrowser(path.join(f.root,'closing-candidate'),false,true);
+  const creator=await context.browser().newBrowserCDPSession();
+  const previousAttach=process.env.PW_CHROMIUM_ATTACH_TO_OTHER;
+  const attach=context.newCDPSession.bind(context);
+  try {
+    process.env.PW_CHROMIUM_ATTACH_TO_OTHER='1';
+    const pending=context.waitForEvent('page',{timeout:5000});
+    const {targetId}=await creator.send('Target.createTarget',{url:'about:blank',hidden:true,background:true});
+    const stale=await pending;
+    if(previousAttach===undefined) delete process.env.PW_CHROMIUM_ATTACH_TO_OTHER;
+    else process.env.PW_CHROMIUM_ATTACH_TO_OTHER=previousAttach;
+    let raced=false;
+    context.newCDPSession=async page=>{
+      if(page===stale&&!raced) {
+        raced=true;
+        await creator.send('Target.closeTarget',{targetId});
+      }
+      return attach(page);
+    };
+    const page=await context.newPage();
+    assert.equal(raced,true,'Close an unregistered candidate between enumeration and CDP attachment');
+    assert.notEqual(page,stale);
+    await minimizeBrowser(context,page);
+    assert.equal(context.pages().length,2);
+    assert.equal(process.env.PW_CHROMIUM_ATTACH_TO_OTHER,previousAttach);
+  } finally {
+    if(previousAttach===undefined) delete process.env.PW_CHROMIUM_ATTACH_TO_OTHER;
+    else process.env.PW_CHROMIUM_ATTACH_TO_OTHER=previousAttach;
+    context.newCDPSession=attach;
+    await creator.detach().catch(()=>{});
+    await context.close();
   }
 });

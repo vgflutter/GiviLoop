@@ -9,6 +9,10 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const npm = process.env.npm_execpath;
 if (!npm) throw new Error("Run this check with npm run test:package.");
+// Emulated machines can finish each case but exceed the native suite budget.
+// Keep individual test deadlines and assertions unchanged.
+const slowVm = process.argv.includes("--slow-vm");
+const testBudgetScale = slowVm ? 2 : 1;
 const temporary = mkdtempSync(path.join(os.tmpdir(), "giviloop-package-"));
 const releases = path.join(root, ".giviloop/releases"); mkdirSync(releases, { recursive: true });
 function run(command, args, options = {}) {
@@ -53,9 +57,9 @@ try {
   assert.match(run(process.execPath, [path.join(installed, "examples/double-check/verify.mjs")], { cwd: consumer }), /4 regression cases passed/);
   const tests = readdirSync(path.join(root, "test")).filter(name => name.endsWith(".test.mjs")).map(name => path.join("test", name));
   const env = { ...process.env, GIVILOOP_TEST_DIST_DIR: dist };
-  const unitOutput = run(process.execPath, ["--test", "--test-reporter=tap", ...tests], { env, timeout: 240000, evidence: "package-unit-tests.tap" });
+  const unitOutput = run(process.execPath, ["--test", "--test-reporter=tap", ...tests], { env, timeout: 240000 * testBudgetScale, evidence: "package-unit-tests.tap" });
   const browser = process.argv.includes("--browser");
-  const browserOutput = browser ? run(process.execPath, ["--test", "--test-reporter=tap", "--test-concurrency=1", "test/browser/roundtrip.test.mjs"], { env, timeout: 600000, evidence: "package-browser-tests.tap" }) : "";
+  const browserOutput = browser ? run(process.execPath, ["--test", "--test-reporter=tap", "--test-concurrency=1", "test/browser/roundtrip.test.mjs"], { env, timeout: 600000 * testBudgetScale, evidence: "package-browser-tests.tap" }) : "";
   const audit = JSON.parse(run(process.execPath, [npm, "audit", "--json"], { cwd: consumer }));
   const report = {
     version: manifest.version, files: pack.files.map(item => item.path), archiveBytes: pack.size,
@@ -65,7 +69,7 @@ try {
     browserTests: browser ? Number(/# pass (\d+)/.exec(browserOutput)?.[1]) : 0,
     browserSkipped: browser ? Number(/# skipped (\d+)/.exec(browserOutput)?.[1] ?? 0) : 0,
     auditVulnerabilities: audit.metadata.vulnerabilities.total,
-    platform: process.platform, node: process.version, checkedAt: new Date().toISOString(),
+    platform: process.platform, node: process.version, slowVm, checkedAt: new Date().toISOString(),
   };
   assert.ok(Number.isSafeInteger(report.unitTests) && report.unitTests > 0, "Missing unit test count");
   if (browser) assert.ok(Number.isSafeInteger(report.browserTests) && report.browserTests > 0, "Missing browser test count");
