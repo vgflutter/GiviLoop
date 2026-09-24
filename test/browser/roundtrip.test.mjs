@@ -884,9 +884,11 @@ test('native background pages have no OS window across restart, new pages and co
         await assert.rejects(showBrowser(c,p),/BROWSER_INTERACTION_REQUIRED/);
         if(cycle===0) await c.addCookies([{name:'windowless-session',value:'persistent',url:'https://example.test/',secure:true,httpOnly:true,expires:Math.floor(Date.now()/1000)+3600}]);
         assert.equal((await c.cookies('https://example.test/')).find(c=>c.name==='windowless-session')?.value,'persistent');
-        const next=await c.newPage();
-        await minimizeBrowser(c,next);
-        await next.close();
+        for(let pageIndex=0;pageIndex<5;pageIndex++) {
+          const next=await c.newPage();
+          await minimizeBrowser(c,next);
+          await next.close();
+        }
       }
       assert.equal(process.env.PW_CHROMIUM_ATTACH_TO_OTHER,previousAttach,'Concurrent launches must restore the caller environment');
     } finally { await Promise.all(contexts.filter(c=>c.status==='fulfilled').map(c=>c.value.close())); }
