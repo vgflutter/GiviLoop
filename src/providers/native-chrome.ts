@@ -68,7 +68,9 @@ async function prepareWindowless(browser: Browser, context: BrowserContext): Pro
       const { targetInfos } = await session.send("Target.getTargets");
       if (targetInfos.some(t => t.url === `chrome-extension://${id}/offscreen.html`)) {
         const worker = context.serviceWorkers().find(w => w.url() === `chrome-extension://${id}/worker.js`);
-        if (worker && await worker.evaluate("globalThis.giviloopOffscreen?.ready === true")) { ready = true; break; }
+        // Reloading the persisted extension can briefly expose its old worker
+        // while Chrome replaces the execution context (notably on Windows).
+        if (worker && await worker.evaluate("globalThis.giviloopOffscreen?.ready === true").catch(() => false)) { ready = true; break; }
       }
       await delay(100);
     }

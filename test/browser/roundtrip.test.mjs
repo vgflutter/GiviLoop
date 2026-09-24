@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import path from "node:path";
 import { test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -851,7 +851,7 @@ test('native background pages have no OS window across restart, new pages and co
   for(let cycle=0;cycle<3;cycle++) {
     const contexts=await Promise.allSettled([profile,path.join(f.root,'parallel-profile')].map(p=>launchChatBrowser(p,false,true)));
     try {
-      for(const result of contexts) assert.equal(result.status,'fulfilled',String(result.reason));
+      for(const result of contexts) assert.equal(result.status,'fulfilled',`Restart ${cycle}: ${String(result.reason)}`);
       for(const {value:c} of contexts) {
         const pages=c.pages();assert.equal(pages.length,1);assert.equal(pages[0].url(),'about:blank');
         const p=pages[0];

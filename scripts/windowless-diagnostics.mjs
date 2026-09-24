@@ -55,6 +55,33 @@ try {
     sent: window.sent, keys: window.keys, active: document.activeElement?.tagName,
     response: document.querySelector('output').textContent,
   })) }));
+  async function inputCheck(label) {
+    await page.getByRole('button').press('Enter');
+    await new Promise(resolve => setTimeout(resolve, 250));
+    console.log(JSON.stringify({ label, ...await page.evaluate(() => ({ sent: window.sent, keys: window.keys,
+      response: document.querySelector('output').textContent })) }));
+  }
+  await page.getByRole('button').click({ force: true }); // Synthetic, isolated diagnostic only.
+  await inputCheck('direct-pointer');
+  await session.send('Page.setWebLifecycleState', { state: 'active' });
+  await inputCheck('navigation-active');
+  await session.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 750, deviceScaleFactor: 1, mobile: false });
+  await inputCheck('navigation-resize');
+  await session.send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 1, height: 1, scale: 1 } });
+  await inputCheck('navigation-first-frame');
+  const creator = await context.browser().newBrowserCDPSession();
+  process.env.PW_CHROMIUM_ATTACH_TO_OTHER = '1';
+  await creator.send('Target.createTarget', { url: 'https://initial-target.test/', hidden: true, background: true });
+  let initial;
+  for (let i = 0; i < 100 && !initial; i++) {
+    initial = context.pages().find(p => p.url() === 'https://initial-target.test/');
+    if (!initial) await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  await initial.locator('textarea').fill('Synthetic request');
+  await initial.getByRole('button').press('Enter');
+  await new Promise(resolve => setTimeout(resolve, 250));
+  console.log(JSON.stringify({ label: 'initial-target-origin', ...await initial.evaluate(() => ({ sent: window.sent, keys: window.keys,
+    response: document.querySelector('output').textContent })) }));
   await session.detach();
 } finally {
   await context.close();
