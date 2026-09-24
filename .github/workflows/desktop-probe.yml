@@ -1,8 +1,6 @@
-name: Desktop probe
+name: Windowless desktop
 on:
   workflow_dispatch:
-  push:
-    branches: [codex/windowless-cross-platform]
 permissions:
   contents: read
 jobs:

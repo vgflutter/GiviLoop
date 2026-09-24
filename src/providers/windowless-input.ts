@@ -32,8 +32,8 @@ export async function fillWindowlessInput(input: Locator, text: string): Promise
     "The windowless composer did not confirm the complete request. Use givi resume --foreground. No prompt was sent.");
 }
 
-export async function activateWindowlessSend(control: Locator, enter: boolean): Promise<void> {
-  const activated = await control.evaluate((node, useEnter) => {
+export async function activateWindowlessControl(control: Locator, enter: boolean, choice = false): Promise<void> {
+  const activated = await control.evaluate((node, { useEnter, allowChoice }) => {
     if (!(node instanceof HTMLElement) || !node.isConnected || node.closest('[inert]') ||
         node.getAttribute("aria-disabled") === "true" || node.matches(":disabled")) return false;
     node.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
@@ -47,10 +47,11 @@ export async function activateWindowlessSend(control: Locator, enter: boolean): 
       node.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true, cancelable: true }));
       node.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true, cancelable: true }));
     } else {
-      if (!(node instanceof HTMLButtonElement || node instanceof HTMLInputElement && ["button", "submit"].includes(node.type))) return false;
+      if (!(node instanceof HTMLButtonElement || node instanceof HTMLInputElement && ["button", "submit"].includes(node.type)) &&
+          !(allowChoice && ["menuitem", "menuitemradio", "option"].includes(node.getAttribute("role") ?? ""))) return false;
       node.click();
     }
     return true;
-  }, enter);
-  if (!activated) throw new BrowserRunError("BROWSER_INTERACTION_REQUIRED", "The windowless send control is unavailable or covered. Use givi resume --foreground.");
+  }, { useEnter: enter, allowChoice: choice });
+  if (!activated) throw new BrowserRunError("BROWSER_INTERACTION_REQUIRED", "The windowless control is unavailable or covered. Use givi resume --foreground.");
 }

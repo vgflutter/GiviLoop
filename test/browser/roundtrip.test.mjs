@@ -771,9 +771,9 @@ test("legacy response remains readable when an unrelated Stop button is hidden",
   assert.equal(readFileSync(f.latest().response, "utf8"), answer);
 });
 
-test("required model selects and confirms the exact label, ignoring unrelated buttons and longer labels", { timeout: 30_000 }, async t => {
+for (const visibility of ['--headless', '--background']) test(`required model ${visibility} selects and confirms the exact label, ignoring unrelated buttons and longer labels`, { timeout: 30_000 }, async t => {
   const f = setup(t, { model: true });
-  const result = await cli(f, "ask", ["--question", "Review", "--send", "chatgpt-web", "--mode", "auto", "--headless", "--browser-profile", f.profile, "--model", "GPT Pro", "--require-model", "--response-stable-ms", "100", "--max-wait-ms", "5000"]);
+  const result = await cli(f, "ask", ["--question", "Review", "--send", "chatgpt-web", "--mode", "auto", visibility, "--browser-profile", f.profile, "--model", "GPT Pro", "--require-model", "--response-stable-ms", "100", "--max-wait-ms", "5000"]);
   assert.equal(result.code, 0, result.stderr);
   const submissions = f.events().filter(event => event.action === "submit");
   assert.equal(submissions.length, 1);
@@ -784,9 +784,9 @@ for (const [name, options, error] of [
   ["unavailable exact model", { missingModel: true }, "MODEL_UNAVAILABLE"],
   ["model selection without confirmation", { confirmModel: false }, "MODEL_SELECTION_UNCONFIRMED"],
 ]) {
-  test(`required ${name} fails before sending`, { timeout: 30_000 }, async t => {
+  for (const visibility of ['--headless', '--background']) test(`required ${name} ${visibility} fails before sending`, { timeout: 30_000 }, async t => {
     const f = setup(t, { model: true, ...options });
-    const result = await cli(f, "ask", ["--question", "Review", "--send", "chatgpt-web", "--mode", "auto", "--headless", "--browser-profile", f.profile, "--model", "GPT Pro", "--require-model"]);
+    const result = await cli(f, "ask", ["--question", "Review", "--send", "chatgpt-web", "--mode", "auto", visibility, "--browser-profile", f.profile, "--model", "GPT Pro", "--require-model"]);
     assert.notEqual(result.code, 0);
     assert.match(result.stderr, new RegExp(error));
     assert.equal(f.events().filter(event => event.action === "submit").length, 0);
@@ -795,9 +795,9 @@ for (const [name, options, error] of [
   });
 }
 
-test("preferred unavailable model reports fallback and dismisses the menu before sending", { timeout: 30_000 }, async t => {
+for (const visibility of ['--headless', '--background']) test(`preferred unavailable model ${visibility} reports fallback and dismisses the menu before sending`, { timeout: 30_000 }, async t => {
   const f = setup(t, { model: true, missingModel: true });
-  const result = await cli(f, "ask", ["--question", "Review", "--send", "chatgpt-web", "--mode", "auto", "--headless", "--browser-profile", f.profile, "--model", "GPT Pro", "--response-stable-ms", "100", "--max-wait-ms", "5000"]);
+  const result = await cli(f, "ask", ["--question", "Review", "--send", "chatgpt-web", "--mode", "auto", visibility, "--browser-profile", f.profile, "--model", "GPT Pro", "--response-stable-ms", "100", "--max-wait-ms", "5000"]);
   assert.equal(result.code, 0, result.stderr);
   assert.match(result.stdout + result.stderr, /currently selected ChatGPT model/);
   const submissions = f.events().filter(event => event.action === "submit");
