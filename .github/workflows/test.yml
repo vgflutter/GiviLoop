@@ -58,12 +58,6 @@ jobs:
         if: runner.os == 'Linux'
         run: node -e "require('node:fs').appendFileSync(process.env.GITHUB_ENV, 'GIVILOOP_CHROME_PATH=/opt/google/chrome/chrome\n')"
       - run: npm run build
-      - name: Diagnose windowless input on Linux
-        if: runner.os == 'Linux'
-        run: xvfb-run -a node scripts/windowless-diagnostics.mjs
-      - name: Diagnose windowless input on Windows
-        if: runner.os == 'Windows'
-        run: node scripts/windowless-diagnostics.mjs
       - name: Test the installed package in a managed virtual desktop
         if: runner.os == 'Linux'
         run: |

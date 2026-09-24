@@ -75,6 +75,11 @@ async function prepareWindowless(browser: Browser, context: BrowserContext): Pro
       await delay(100);
     }
     if (!ready) throw unavailable();
+    // The process-wide Playwright opt-in can expose the bootstrap document as
+    // an `other` page while another profile creates its hidden review target.
+    // Keep our own offscreen parser out of the public review-page collection.
+    const pages = context.pages.bind(context);
+    context.pages = () => pages().filter(page => page.url() !== `chrome-extension://${id}/offscreen.html`);
     // An unexpected restored page must not become the review destination.
     // In particular, never silently use or minimize an existing visible tab.
     if (context.pages().length) throw unavailable();

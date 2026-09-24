@@ -96,7 +96,7 @@ if (process.argv.includes('--foreground-control')) {
     assert.ok(report.control.maxOnscreenWindows > 0, 'Observer must detect the deliberately visible Chrome window');
     assert.ok(report.control.foregroundSamples > 0, 'Observer must detect the deliberately foreground Chrome window');
     await phase('background', ['--test', '--test-reporter=tap', '--test-concurrency=1',
-      '--test-name-pattern=background pages|automatic MCP review uses windowless|saved defaults and MCP reuse', 'test/browser/roundtrip.test.mjs']);
+      '--test-name-pattern=--background|windowless input|background pages|automatic MCP review uses windowless|saved defaults and MCP reuse', 'test/browser/roundtrip.test.mjs']);
     assert.equal(report.background.maxOnscreenWindows, 0, 'Background browser became visible');
     assert.equal(report.background.foregroundSamples, 0, 'Background browser took desktop focus');
     report.status = 'passed';

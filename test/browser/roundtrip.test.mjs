@@ -46,10 +46,10 @@ function otherFixture(t, spec, incomplete = false) {
 }
 
 for (const spec of webCases) {
-  test(`${spec.provider}: CLI text review -> one send -> complete answer -> MCP read`, { timeout: 30_000 }, async t => {
+  for (const visibility of ['--headless', '--background']) test(`${spec.provider} ${visibility}: CLI text review -> one send -> complete answer -> MCP read`, { timeout: 30_000 }, async t => {
     const f = otherFixture(t, spec);
-    writeFileSync(path.join(f.repo, 'code.txt'), 'Source context è');
-    const sent = await cli(f, 'ask', ['--send', spec.provider, '--question', 'Review', '--file', 'code.txt', '--mode', 'auto', '--headless', '--browser-profile', f.profile, '--response-stable-ms', '100', '--max-wait-ms', '5000']);
+    writeFileSync(path.join(f.repo, 'code.txt'), 'Source context è\n\n  x < y && z > 0\n\tindentation\n<script>throw new Error("must remain text")</script>\n');
+    const sent = await cli(f, 'ask', ['--send', spec.provider, '--question', 'Review', '--file', 'code.txt', '--mode', 'auto', visibility, '--browser-profile', f.profile, '--response-stable-ms', '100', '--max-wait-ms', '5000']);
     assert.equal(sent.code, 0, sent.stderr);
     const run = f.latest();
     assert.equal(readFileSync(run.response, 'utf8'), answer);
@@ -59,6 +59,7 @@ for (const spec of webCases) {
     assert.equal(status.outcome, 'completed');
     assert.equal(f.events().filter(e => e.action === 'submit').length, 1);
     assert.match(f.events().find(e => e.action === 'submit').prompt, /Source context è/);
+    if (visibility === '--background') assert.equal(f.events().find(e => e.action === 'submit').prompt, readFileSync(run.request, 'utf8'));
     const client = await connect(t, f);
     const read = await client.callTool({ name: 'givi_read_external_review', arguments: {repositoryPath:f.repo, runId:run.id} });
     assert.ok(read.content.some(item => item.type === 'text' && item.text.includes(answer)));
@@ -491,12 +492,17 @@ test('MCP stdin EOF closes retained Chrome without relying on a termination sign
   await receive(1); send({ method: 'notifications/initialized' });
   send({ id: 2, method: 'tools/call', params: { name: 'givi_ask_web_llm', arguments: { repositoryPath: f.repo, question: 'Review', browserProfile: f.profile, responseStableMs: 100, maxWaitMs: 5000 } } });
   const response = await receive(2);
+  assert.equal(response.error, undefined, JSON.stringify(response));
   assert.notEqual(response.result?.isError, true, JSON.stringify(response));
   const { profileOwnerPid } = await import(pathToFileURL(path.join(distDir, 'providers/browser-runtime.js')));
-  assert.ok(profileOwnerPid(f.profile));
+  if (process.platform !== 'win32') assert.ok(profileOwnerPid(f.profile));
   child.stdin.end();
   assert.deepEqual(await exited, { code: 0, signal: null });
   assert.equal(profileOwnerPid(f.profile), undefined);
+  // Windows uses a native profile mutex instead of SingletonLock. A successful
+  // fresh launch proves EOF released ownership on every supported platform.
+  const reopened = await cli(f, 'browser', ['check', '--browser-profile', f.profile]);
+  assert.equal(reopened.code, 0, reopened.stderr);
 });
 
 test("terminating a CLI check closes only its owned native Chrome and releases the profile", { timeout: 25_000, skip: process.platform === "win32" }, async t => {
@@ -611,6 +617,22 @@ test("a login wall without an editable composer is reported without submitting",
   assert.equal(access.submitted, false);
   assert.equal(f.events().filter(event => event.action === "submit").length, 0);
   assert.equal(existsSync(path.join(f.repo, ".giviloop/latest-run-id")), false);
+});
+
+for (const change of ['rewrite', 'overlay']) test(`windowless input ${change} stops before any submission`, { timeout: 20000 }, async t => {
+  const f = setup(t);
+  const html = readFileSync(f.env.GIVILOOP_TEST_PAGE, 'utf8');
+  writeFileSync(f.env.GIVILOOP_TEST_PAGE, html.replace('</body>', change === 'rewrite'
+    ? '<script>document.querySelector("#input").addEventListener("input", e => { e.target.value="changed request"; });</script></body>'
+    : '<div style="position:fixed;inset:0;z-index:1000;background:white">Blocking overlay</div></body>'));
+  const result = await cli(f, 'ask', ['--question', 'Original request', '--send', 'chatgpt-web', '--background', '--browser-profile', f.profile]);
+  assert.equal(result.code, 1, result.stderr);
+  assert.match(result.stderr, /BROWSER_INTERACTION_REQUIRED/);
+  assert.equal(f.events().filter(event => event.action === 'submit').length, 0);
+  const status = JSON.parse(readFileSync(path.join(f.latest().dir, 'browser-status.json')));
+  assert.equal(status.submitted, false);
+  assert.equal(status.outcome, 'needs-attention');
+  assert.equal(existsSync(f.latest().response), false);
 });
 
 test("browser check returns a challenge before a composer or challenge DOM appears", { timeout: 30_000 }, async t => {

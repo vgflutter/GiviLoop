@@ -13,6 +13,8 @@ import { acquireRunLock } from "../run-lock.js";
 import { runControl } from "../run-control.js";
 import { assertResumable } from "../resume-guard.js";
 import { browserSessions } from "./browser-sessions.js";
+import { nativeChrome } from "./native-chrome.js";
+import { activateWindowlessSend, fillWindowlessInput } from "./windowless-input.js";
 
 export type ChatGptWebMode = "prefill" | "submit" | "auto";
 export type ChatGptModelSelection = "prefer" | "require";
@@ -212,7 +214,9 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
     record("filling");
     checkCancelled();
     assertChatOrigin(page, providerUrl);
-    await chatInput(page, provider).fill(requestText, { timeout: 10_000 });
+    const windowless = nativeChrome.isWindowless(context);
+    if (windowless) await fillWindowlessInput(chatInput(page, provider), requestText);
+    else await chatInput(page, provider).fill(requestText, { timeout: 10_000 });
     checkCancelled();
     if (mode === "prefill") {
       status.outcome = "prefilled";
@@ -226,11 +230,7 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
     const button = provider === "chatgpt-web" ? await waitForSendButton(page) : await otherSendControl(page, provider);
     checkCancelled();
     assertChatOrigin(page, providerUrl);
-    // Windows/Linux hidden targets do not schedule animation frames. A mouse
-    // click's stability wait would stall indefinitely. Native buttons support
-    // trusted keyboard activation without animation frames or a forced click.
-    const keyboardSend = background && !headless && provider !== "deepseek-web";
-    if (keyboardSend && !await button.evaluate(node => node instanceof HTMLButtonElement ||
+    if (windowless && provider !== "deepseek-web" && !await button.evaluate(node => node instanceof HTMLButtonElement ||
         node instanceof HTMLInputElement && ["button", "submit"].includes(node.type))) {
       throw new BrowserRunError("BROWSER_INTERACTION_REQUIRED", "The send control needs an explicitly visible session. Use givi resume --foreground. No prompt was sent.");
     }
@@ -239,7 +239,8 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
     status.submitted = "unknown";
     record("submitting");
     try {
-      if (provider === "deepseek-web" || keyboardSend) await button.press("Enter", { timeout: 10_000 });
+      if (windowless) await activateWindowlessSend(button, provider === "deepseek-web");
+      else if (provider === "deepseek-web") await button.press("Enter", { timeout: 10_000 });
       else await button.click({ timeout: 10_000 });
     }
     catch {
