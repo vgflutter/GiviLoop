@@ -68,11 +68,18 @@ async function prepareWindowless(browser: Browser, context: BrowserContext): Pro
       const { targetInfos } = await session.send("Target.getTargets");
       if (targetInfos.some(t => t.url === `chrome-extension://${id}/offscreen.html`)) {
         const worker = context.serviceWorkers().find(w => w.url() === `chrome-extension://${id}/worker.js`);
-        if (worker && await worker.evaluate("globalThis.giviloopOffscreen?.ready === true")) { ready = true; break; }
+        // Reloading the persisted extension can briefly expose its old worker
+        // while Chrome replaces the execution context (notably on Windows).
+        if (worker && await worker.evaluate("globalThis.giviloopOffscreen?.ready === true").catch(() => false)) { ready = true; break; }
       }
       await delay(100);
     }
     if (!ready) throw unavailable();
+    // The process-wide Playwright opt-in can expose the bootstrap document as
+    // an `other` page while another profile creates its hidden review target.
+    // Keep our own offscreen parser out of the public review-page collection.
+    const pages = context.pages.bind(context);
+    context.pages = () => pages().filter(page => page.url() !== `chrome-extension://${id}/offscreen.html`);
     // An unexpected restored page must not become the review destination.
     // In particular, never silently use or minimize an existing visible tab.
     if (context.pages().length) throw unavailable();

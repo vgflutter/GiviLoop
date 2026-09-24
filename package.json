@@ -10,8 +10,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node --test test/*.test.mjs",
-    "test:browser": "npm run build && node --test --test-concurrency=1 test/browser/*.test.mjs",
+    "test": "npm run build && node scripts/run-tests.mjs",
+    "test:browser": "npm run build && node scripts/run-tests.mjs --browser",
     "test:package": "node scripts/package-smoke.mjs",
     "prepack": "npm run build",
     "givi": "node dist/cli.js",

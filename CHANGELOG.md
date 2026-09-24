@@ -7,7 +7,9 @@ Release summaries. Historical validation reports and full development notes rema
 - Background CLI/MCP reviews use hidden top-level pages in ordinary Chrome, supported by a bundled offscreen extension loaded through DevTools. Saved dedicated profiles and native cookie encryption are preserved; no manual extension installation is required.
 - Windowless startup failure stops with `WINDOWLESS_UNAVAILABLE` instead of opening a minimized or visible fallback. Login, verification and uploads retain their explicit foreground workflow.
 - Verify hidden pages across restarts, concurrent profiles, new pages, session reuse and installed-package execution. Pin Playwright 1.61.1 for its internal hidden-target attachment support.
-- macOS validation includes ten ordinary-Chrome restarts and two real anonymous ChatGPT MCP reviews with no visible browser window or foreground activation sampled. Windows/Linux VM and authenticated windowless provider checks remain pending. [Evidence and limits](docs/windowless-browser.md).
+- Windows/Linux hidden pages can stop scheduling animation frames and silently discard CDP input after navigation. Background reviews now use DOM editing with full-text verification and guarded control activation; code whitespace and HTML remain literal. Model selection and fallback use the same path. No prompt is sent when the composer is covered or changes the request.
+- Fix Windows short-path aliases when checking the Git root and keep the bundled offscreen document out of review pages during concurrent profile startup. Make the test launcher and preload URLs portable; preserve package-test logs on failure.
+- Add Windows to the Node 20/22/24 test matrix and test installed packages on Windows and Linux. Native desktop observers must first detect a deliberately visible foreground window before checking background reviews. Real anonymous ChatGPT reviews were repeated successfully on macOS. Authenticated windowless provider checks remain pending. [Evidence and limits](docs/windowless-browser.md).
 
 ## 0.8.2
 

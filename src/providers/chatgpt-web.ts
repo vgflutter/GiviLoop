@@ -13,6 +13,8 @@ import { acquireRunLock } from "../run-lock.js";
 import { runControl } from "../run-control.js";
 import { assertResumable } from "../resume-guard.js";
 import { browserSessions } from "./browser-sessions.js";
+import { nativeChrome } from "./native-chrome.js";
+import { activateWindowlessControl, fillWindowlessInput } from "./windowless-input.js";
 
 export type ChatGptWebMode = "prefill" | "submit" | "auto";
 export type ChatGptModelSelection = "prefer" | "require";
@@ -212,7 +214,9 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
     record("filling");
     checkCancelled();
     assertChatOrigin(page, providerUrl);
-    await chatInput(page, provider).fill(requestText, { timeout: 10_000 });
+    const windowless = nativeChrome.isWindowless(context);
+    if (windowless) await fillWindowlessInput(chatInput(page, provider), requestText);
+    else await chatInput(page, provider).fill(requestText, { timeout: 10_000 });
     checkCancelled();
     if (mode === "prefill") {
       status.outcome = "prefilled";
@@ -226,12 +230,17 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
     const button = provider === "chatgpt-web" ? await waitForSendButton(page) : await otherSendControl(page, provider);
     checkCancelled();
     assertChatOrigin(page, providerUrl);
+    if (windowless && provider !== "deepseek-web" && !await button.evaluate(node => node instanceof HTMLButtonElement ||
+        node instanceof HTMLInputElement && ["button", "submit"].includes(node.type))) {
+      throw new BrowserRunError("BROWSER_INTERACTION_REQUIRED", "The send control needs an explicitly visible session. Use givi resume --foreground. No prompt was sent.");
+    }
     // A click can have reached the server even if Playwright loses the page.
     // Never retry a click or navigation after this point.
     status.submitted = "unknown";
     record("submitting");
     try {
-      if (provider === "deepseek-web") await button.press("Enter", { timeout: 10_000 });
+      if (windowless) await activateWindowlessControl(button, provider === "deepseek-web");
+      else if (provider === "deepseek-web") await button.press("Enter", { timeout: 10_000 });
       else await button.click({ timeout: 10_000 });
     }
     catch {
@@ -468,7 +477,10 @@ async function maybeSelectChatGptModel(
     await selectChatGptModel(page, options.model);
     return undefined;
   } catch (error) {
-    await page.keyboard.press("Escape").catch(() => undefined);
+    if (nativeChrome.isWindowless(page.context())) {
+      await page.evaluate(() => (document.activeElement ?? document.body).dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true }))).catch(() => undefined);
+    } else await page.keyboard.press("Escape").catch(() => undefined);
     const message = error instanceof Error ? error.message : String(error);
 
     if (options.modelSelection === "require") {
@@ -512,7 +524,8 @@ async function selectChatGptModel(page: Page, model: string): Promise<void> {
   if (!await switcher.isVisible()) {
     throw new BrowserRunError("MODEL_UNAVAILABLE", `No model selector is available for requested model: ${normalizedModel}. Sign in and check the labels available to this account.`);
   }
-  await switcher.click({ timeout: 2_000 });
+  if (nativeChrome.isWindowless(page.context())) await activateWindowlessControl(switcher, false);
+  else await switcher.click({ timeout: 2_000 });
   const pattern = exactModelPattern(normalizedModel);
   const candidates = [
     page.getByRole("menuitem", { name: pattern }),
@@ -526,7 +539,8 @@ async function selectChatGptModel(page: Page, model: string): Promise<void> {
     for (const candidate of candidates) {
       for (const option of await candidate.all()) {
         if (!await option.isVisible()) continue;
-        await option.click({ timeout: 2_000 });
+        if (nativeChrome.isWindowless(page.context())) await activateWindowlessControl(option, false, true);
+        else await option.click({ timeout: 2_000 });
         selected = true;
         break;
       }

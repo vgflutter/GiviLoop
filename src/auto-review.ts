@@ -58,7 +58,10 @@ function git(root: string, args: string[]) {
 }
 function rootPath(repository: string) {
   const root = realpathSync(repository);
-  if (realpathSync(git(root, ["rev-parse", "--show-toplevel"]).trim()) !== root) throw new Error("Automatic review requires the Git repository root.");
+  // Git for Windows expands short (8.3) directory names used by os.tmpdir().
+  // Compare native canonical paths, but preserve the caller's storage spelling.
+  const top = realpathSync.native(git(root, ["rev-parse", "--show-toplevel"]).trim());
+  if (path.relative(realpathSync.native(root), top) !== "") throw new Error("Automatic review requires the Git repository root.");
   return root;
 }
 function readPolicy(root: string): Policy | undefined {
