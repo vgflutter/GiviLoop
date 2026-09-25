@@ -242,6 +242,33 @@ They do not promise that a new anonymous cloud-runner session will always be
 accepted by the provider. Original failures and unsuccessful repetitions remain
 in the evidence rather than being relabeled as successes.
 
+A separate rendering regression was then reproduced on a fully local page:
+hidden Chrome reported `visibilityState=visible`, ran ordinary timers, but
+delivered zero animation callbacks. Focus emulation, disabled background
+throttling and screenshot capture did not restore those callbacks. A synthetic
+assistant-response regression now updates its DOM in `requestAnimationFrame`
+and verifies completion with the correction. This explains why a successful send alone was insufficient
+to validate the complete workflow.
+
+Windowless ChatGPT reviews now install a narrowly scoped scheduling fallback
+before navigation. The native callback wins when delivered; otherwise the
+pending callback is delivered after 100 ms with a monotonic timestamp. A cancelled
+callback stays cancelled and a callback is never delivered twice. This changes
+animation scheduling in the configured top-level chat document. It does not run
+inside child frames or on authentication origins, alter event trust or user
+agent, accept a challenge, or read responses through a private API. Product
+responses are still obtained from the website DOM. Healthy retained pages install
+the compatibility code once per configured origin.
+
+The [isolated rendering experiment](https://github.com/vgflutter/GiviLoop/actions/runs/36111695169)
+completed two real reviews on each OS, including the dynamic editor/streaming UI.
+Both calibrated observers saw one reused Chrome process and zero visible or
+foreground samples. Linux recorded 1,432 samples (maximum gap 59 ms); Windows
+recorded 2,168 (156 ms). This experiment preceded integration into the product;
+its diagnostic-only switch has been removed after the integration. The browser
+regressions cover missing/native callbacks, cancellation, origin/frame boundaries
+and a response requiring an animation callback.
+
 ## Reproduce from a source checkout
 
 The normal package check installs the actual tarball into a temporary consumer,

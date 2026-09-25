@@ -32,7 +32,7 @@ export async function confirmWindowlessInput(input: Locator, text: string): Prom
 
 // Hidden Chrome targets on Windows/Linux can acknowledge CDP keyboard events
 // without delivering them after a renderer change. Use the page's editing
-// command and DOM activation instead. Never alter event trust or page scripts.
+// command and DOM activation instead. Never alter event trust.
 export async function fillWindowlessInput(input: Locator, text: string): Promise<void> {
   const filled = await input.evaluate((node, value) => {
     if (!(node instanceof HTMLElement) || !node.isConnected || node.closest('[inert]')) return 'unavailable';

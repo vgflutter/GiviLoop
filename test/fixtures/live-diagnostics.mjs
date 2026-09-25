@@ -11,26 +11,6 @@ if (output) {
   const launch = nativeChrome.launch;
   nativeChrome.launch = async (...args) => {
     const context = await launch(...args);
-    // Experimental diagnostic only: never loaded by the shipped product.
-    if (process.env.GIVILOOP_TEST_FRAME_FALLBACK === '1') await context.addInitScript(() => {
-      if (window.top !== window || location.origin !== 'https://chatgpt.com') return;
-      const request = window.requestAnimationFrame.bind(window);
-      const cancel = window.cancelAnimationFrame.bind(window);
-      const pending = new Map();
-      window.requestAnimationFrame = callback => {
-        if (typeof callback !== 'function') return request(callback);
-        let timer, done = false;
-        const run = time => {
-          if (done) return;
-          done = true; clearTimeout(timer); pending.delete(id); callback(time);
-        };
-        const id = request(run);
-        timer = setTimeout(() => { cancel(id); run(performance.now()); }, 100);
-        pending.set(id, () => { done = true; clearTimeout(timer); });
-        return id;
-      };
-      window.cancelAnimationFrame = id => { pending.get(id)?.(); pending.delete(id); cancel(id); };
-    });
     let number = 0;
     const observe = page => {
       const id = ++number;

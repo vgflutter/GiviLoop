@@ -4,6 +4,7 @@ Release summaries. Historical validation reports and full development notes rema
 
 ## Unreleased
 
+- Keep ChatGPT response rendering active in hidden Chrome pages: native animation callbacks are used when available, with a 100 ms timer fallback for callbacks Chrome stalls. Preserve cancellation and single delivery; restrict the compatibility code to the configured top-level chat origin, leaving child frames and authentication pages unchanged.
 - Fix false composer mismatches in ChatGPT's ProseMirror editor: compare document paragraphs and cursor placeholders without trimming real code whitespace. Recheck the entire request immediately before sending, and identify the site's explicit verification failure instead of waiting for a response timeout. Add live diagnostics restricted to fresh synthetic-test profiles.
 - Background CLI/MCP reviews use hidden top-level pages in ordinary Chrome, supported by a bundled offscreen extension loaded through DevTools. Saved dedicated profiles and native cookie encryption are preserved; no manual extension installation is required.
 - Windowless startup failure stops with `WINDOWLESS_UNAVAILABLE` instead of opening a minimized or visible fallback. Login, verification and uploads retain their explicit foreground workflow.

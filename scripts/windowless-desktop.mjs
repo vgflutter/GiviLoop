@@ -36,7 +36,6 @@ if (values['foreground-control']) {
   mkdirSync(destination, { recursive: true });
   const report = { platform: process.platform, os: os.version(), release: os.release(), arch: os.arch(), node: process.version,
     checkedAt: new Date().toISOString(), status: 'failed',
-    frameFallbackExperiment: process.env.GIVILOOP_TEST_FRAME_FALLBACK === '1',
     mode: liveProvider ? 'live' : 'fixtures', ...(liveProvider ? { provider: liveProvider, source: 'public synthetic fixtures only' } : {}) };
   function start(command, args, options = {}) {
     const child = spawn(command, args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], ...options });

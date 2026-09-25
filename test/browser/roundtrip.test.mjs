@@ -619,6 +619,62 @@ test("a login wall without an editable composer is reported without submitting",
   assert.equal(existsSync(path.join(f.repo, ".giviloop/latest-run-id")), false);
 });
 
+test('--background frame scheduling preserves cancellation, native delivery and frame/origin boundaries', { timeout: 20000 }, async t => {
+  const f = fixture(t);
+  const { nativeChrome } = await import(pathToFileURL(path.join(distDir, 'providers/native-chrome.js')));
+  const { installWindowlessFrameFallback } = await import(pathToFileURL(path.join(distDir, 'providers/windowless-rendering.js')));
+  const context = await nativeChrome.launch(path.join(f.root, 'frame-scheduling'), true);
+  try {
+    const page = context.pages()[0];
+    await page.route('**/*', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><iframe srcdoc="<p>Child frame</p>"></iframe>' }));
+    await page.goto('https://chatgpt.com/frame-fixture', { waitUntil: 'load' });
+    await page.evaluate(() => {
+      window.sequence = 0; window.nativeFrames = false;
+      window.requestAnimationFrame = callback => { const id = ++window.sequence; if (window.nativeFrames) setTimeout(() => callback(performance.now()), 0); return id; };
+      window.cancelAnimationFrame = () => {};
+      window.initialFrameRequest = window.requestAnimationFrame;
+    });
+    await page.evaluate(installWindowlessFrameFallback, 'https://unrelated.invalid');
+    assert.equal(await page.evaluate(() => window.requestAnimationFrame === window.initialFrameRequest), true);
+    const child = page.frames().find(frame => frame !== page.mainFrame());
+    await child.evaluate(() => { window.initialFrameRequest = window.requestAnimationFrame; });
+    await child.evaluate(installWindowlessFrameFallback, 'null');
+    assert.equal(await child.evaluate(() => window.requestAnimationFrame === window.initialFrameRequest), true);
+    await page.evaluate(installWindowlessFrameFallback, 'https://chatgpt.com');
+    for (const native of [false, true]) {
+      const result = await page.evaluate(async native => {
+        window.nativeFrames = native;
+        let calls = 0, cancelledCalls = 0, timestamp = 0;
+        const start = performance.now();
+        requestAnimationFrame(time => { calls++; timestamp = time; });
+        const cancelled = requestAnimationFrame(() => cancelledCalls++); cancelAnimationFrame(cancelled);
+        await new Promise(resolve => setTimeout(resolve, 250));
+        return { calls, cancelledCalls, validTimestamp: timestamp >= start };
+      }, native);
+      assert.deepEqual(result, { calls: 1, cancelledCalls: 0, validTimestamp: true });
+    }
+    await nativeChrome.assertWindowless(context, page);
+  } finally { await context.close(); }
+});
+
+test('--background captures an answer whose DOM update requires an animation frame', { timeout: 20000 }, async t => {
+  const f = setup(t);
+  const html = readFileSync(f.env.GIVILOOP_TEST_PAGE, 'utf8');
+  writeFileSync(f.env.GIVILOOP_TEST_PAGE, html.replace('</body>', `<script>
+    document.querySelector('[data-testid=composer-submit-button]').onclick=()=>{
+      window.captureSubmission({prompt:document.querySelector('#input').value});
+      const item=document.createElement('li');item.setAttribute('data-message-role','assistant');
+      const content=document.createElement('div');content.setAttribute('data-assistant-markdown','');item.append(content);
+      document.querySelector('#conversation').append(item);
+      requestAnimationFrame(()=>{content.textContent=${JSON.stringify(answer)};item.setAttribute('data-message-complete','');});
+    };
+    </script></body>`));
+  const result = await cli(f, 'ask', ['--question', 'Public frame test', '--send', 'chatgpt-web', '--background', '--browser-profile', f.profile, '--response-stable-ms', '100', '--max-wait-ms', '5000']);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(readFileSync(f.latest().response, 'utf8'), answer);
+  assert.equal(f.events().filter(event => event.action === 'submit').length, 1);
+});
+
 test('windowless input recognizes ProseMirror cursor placeholders without trimming code', { timeout: 20000 }, async t => {
   const f = fixture(t);
   const { nativeChrome } = await import(pathToFileURL(path.join(distDir, 'providers/native-chrome.js')));

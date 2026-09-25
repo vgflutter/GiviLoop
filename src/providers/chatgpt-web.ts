@@ -15,6 +15,7 @@ import { assertResumable } from "../resume-guard.js";
 import { browserSessions } from "./browser-sessions.js";
 import { nativeChrome } from "./native-chrome.js";
 import { activateWindowlessControl, confirmWindowlessInput, fillWindowlessInput } from "./windowless-input.js";
+import { prepareWindowlessRendering } from "./windowless-rendering.js";
 
 export type ChatGptWebMode = "prefill" | "submit" | "auto";
 export type ChatGptModelSelection = "prefer" | "require";
@@ -173,6 +174,7 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
     } else context = await launchChatBrowser(userDataDir, headless, background);
     checkCancelled();
     const page = await createFreshPage(context);
+    if (provider === "chatgpt-web" && nativeChrome.isWindowless(context)) await prepareWindowlessRendering(page, providerUrl);
     if (background) await minimizeBrowser(context, page);
     record("navigating");
     await navigateToChat(page, providerUrl, options.navigationTimeoutMs ?? 20_000, verificationWaitMs, async () => {

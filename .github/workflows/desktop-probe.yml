@@ -2,10 +2,6 @@ name: Windowless desktop
 on:
   workflow_dispatch:
     inputs:
-      frame-fallback:
-        description: 'Diagnostic experiment only: deliver stalled animation callbacks with a timer'
-        type: boolean
-        default: false
       runner:
         description: 'Native system to validate'
         type: choice
@@ -36,7 +32,6 @@ jobs:
     timeout-minutes: 12
     env:
       GIVILOOP_LIVE_PROVIDER: ${{ inputs.live-provider }}
-      GIVILOOP_TEST_FRAME_FALLBACK: ${{ inputs.frame-fallback && '1' || '0' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
