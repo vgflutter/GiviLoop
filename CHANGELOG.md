@@ -4,6 +4,7 @@ Release summaries. Historical validation reports and full development notes rema
 
 ## Unreleased
 
+- Fix false composer mismatches in ChatGPT's ProseMirror editor: compare document paragraphs and cursor placeholders without trimming real code whitespace. Recheck the entire request immediately before sending, and identify the site's explicit verification failure instead of waiting for a response timeout. Add live diagnostics restricted to fresh synthetic-test profiles.
 - Background CLI/MCP reviews use hidden top-level pages in ordinary Chrome, supported by a bundled offscreen extension loaded through DevTools. Saved dedicated profiles and native cookie encryption are preserved; no manual extension installation is required.
 - Windowless startup failure stops with `WINDOWLESS_UNAVAILABLE` instead of opening a minimized or visible fallback. Login, verification and uploads retain their explicit foreground workflow.
 - Verify hidden pages across restarts, concurrent profiles, new pages, session reuse and installed-package execution. Pin Playwright 1.61.1 for its internal hidden-target attachment support.

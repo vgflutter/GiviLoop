@@ -196,6 +196,52 @@ processes and zero visible/foreground samples; maximum sampling gaps were 172 ms
 on Windows and 50 ms on Linux. The live repetitions above are reported separately
 and are not silently treated as passed by this synthetic regression suite.
 
+## Follow-up: editor correction and timeout diagnosis
+
+The initial failed repetitions lacked page evidence, so their exact causes cannot
+be reconstructed retrospectively. Follow-up tests now capture page state from
+fresh anonymous synthetic-test profiles before closing Chrome. They reproduced
+two composer representations that `innerText` did not faithfully serialize:
+
+- An editor-only `ProseMirror-trailingBreak` made a 6,075-character request appear
+  to contain 6,076 characters. This is a cursor placeholder, not request content.
+- Hydration produced 204 paragraphs containing the same 6,075 request characters,
+  while rendered paragraph spacing made `innerText` report 6,331 characters.
+
+The comparison now decodes the observed plain-text paragraph/line-break shapes,
+including flat editable fields. It preserves indentation, tabs, literal HTML and
+real trailing newlines; it does not use `trim()` to hide differences. Regression
+cases reject inserted/missing lines, changed indentation and rewritten code.
+The browser waits for document loading, then verifies the complete text again
+immediately before the single send action. A delayed editor rewrite must stop
+before submission. ProseMirror's own [cursor-placeholder implementation](https://github.com/ProseMirror/prosemirror-view/blob/master/src/viewdesc.ts)
+explains why this rendering detail is not part of its document.
+
+After this correction, the previously failing hosted Linux environment completed
+both real reviews in [one run](https://github.com/vgflutter/GiviLoop/actions/runs/36108567376)
+and again in the **Linux job** of [the repetition](https://github.com/vgflutter/GiviLoop/actions/runs/36108837721).
+The first pair completed in 14.2 and 13.4 seconds. Its calibrated observer recorded
+1,088 background samples, one reused Chrome process, zero visible/foreground
+samples and zero enumeration failures, with a maximum sampling gap of 58 ms.
+The buggy response identified both seeded defects; the fixed response returned
+`NO_CONFIRMED_FINDINGS`. The Windows job of the repetition timed out and is not
+counted as a completed live check.
+
+Further [diagnostic attempts on both hosted systems](https://github.com/vgflutter/GiviLoop/actions/runs/36109471263)
+returned HTTP 403 for website JavaScript assets and displayed **“An error occurred
+during verification, please try again.”** No assistant answer appeared. GiviLoop
+now recognizes that explicit website error as `ACCESS_CHALLENGE` instead of
+waiting 180 seconds and reporting `RESPONSE_TIMEOUT`. Tests cover the message
+before and after an attempted send, plus quoted copies in the conversation that
+must not trigger a false challenge. No verification or resend is automated.
+The retained submission flag must still be inspected: clicking Send does not
+prove that the service accepted or answered the request.
+
+These results distinguish a corrected editor bug from website access failures.
+They do not promise that a new anonymous cloud-runner session will always be
+accepted by the provider. Original failures and unsuccessful repetitions remain
+in the evidence rather than being relabeled as successes.
+
 ## Reproduce from a source checkout
 
 The normal package check installs the actual tarball into a temporary consumer,
@@ -290,11 +336,23 @@ The report is `.giviloop/diagnostics/windowless-live-chatgpt-web.json`, alongsid
 the `web-acceptance/` responses and `desktop-*.log` files. Test one workload at a
 time because the desktop log filenames are shared.
 
+The portable live runner enables synthetic page diagnostics: editor text/markup,
+navigation origins, HTTP status codes and structural response indicators. It
+does not retain cookies, headers, URL query strings or raw network bodies. The
+underlying `web-acceptance.mjs --diagnostics --browser-profile PATH` refuses a
+nonempty profile; ordinary acceptance runs without `--diagnostics` do not enable
+this instrumentation. Failure evidence includes the synthetic request for an
+exact comparison with the editor.
+
 The same explicit opt-in runs on both hosted VMs through the manual workflow:
 
 ```sh
 gh workflow run desktop-probe.yml -f live-provider=chatgpt-web
 ```
+
+Use `-f runner=ubuntu-latest` or `-f runner=windows-latest` for one system; the
+default is `both`. Desktop coverage counts individual launch records, with unique
+PID counts reported separately, so PID recycling does not merge two launches.
 
 Its default `live-provider=none` runs only the intercepted fixture tests. Normal
 push/PR tests never opt into real provider submissions.

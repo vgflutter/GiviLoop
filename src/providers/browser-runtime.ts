@@ -144,6 +144,13 @@ export async function pageBlocker(page: Page, provider: WebProvider = "chatgpt-w
   if (await challenge.isVisible().catch(() => false)) {
     return new BrowserRunError("ACCESS_CHALLENGE", "The site requires interactive verification. Automatic sending stopped. Open the dedicated browser with givi browser login.");
   }
+  // ChatGPT's anonymous UI can fail its verification without rendering a
+  // challenge iframe. Do not mistake quoted prompt/response text for its UI.
+  if (provider === "chatgpt-web" && await page.locator(
+    ':text-is("An error occurred during verification, please try again."):not([data-message-role], [data-message-role] *, [data-message-author-role], [data-message-author-role] *, [contenteditable], [contenteditable] *, textarea)',
+  ).first().isVisible().catch(() => false)) {
+    return new BrowserRunError("ACCESS_CHALLENGE", "ChatGPT reports that its verification failed. No automatic retry was attempted. Check this run's submitted status, then use givi open to inspect the dedicated browser session.");
+  }
   const alert = await page.locator('[role="alert"]').first().innerText({ timeout: 250 }).catch(() => "");
   if (/usage limit|rate limit|too many requests|limite di utilizzo|troppe richieste/i.test(alert)) {
     return new BrowserRunError("PROVIDER_LIMIT", "The provider reports a usage or request limit. Wait for the limit to reset before retrying.");

@@ -102,16 +102,21 @@ stats = dict(platform=sys.platform, intervalMs=20, samples=0, ownedProcessSample
              observedProcessCount=0, foregroundSamples=0, maxOwnedWindows=0,
              maxOnscreenWindows=0, enumerationFailures=0, maxSampleGapMs=0)
 observed = set()
+observed_pids = set()
 previous = time.monotonic()
 print("ready", flush=True)
 while not stop_file.exists():
     now = time.monotonic()
     stats["maxSampleGapMs"] = max(stats["maxSampleGapMs"], (now - previous) * 1000)
     previous = now
-    pids = {int(value) for value in pids_file.read_text(encoding="utf8").splitlines() if value.isdigit()}
+    # PIDs may be recycled during a long Windows run. A log entry identifies
+    # a launch; only the newest entry for a PID can describe its live process.
+    launches = [int(value) for value in pids_file.read_text(encoding="utf8").splitlines() if value.isdigit()]
+    current = {pid: index for index, pid in enumerate(launches)}
     try:
-        live = {pid for pid in pids if alive(pid)}
-        observed.update(live)
+        live = {pid for pid in current if alive(pid)}
+        observed.update(current[pid] for pid in live)
+        observed_pids.update(live)
         stats["ownedProcessSamples"] += bool(live)
         total, visible, foreground = snapshot(live)
         stats["maxOwnedWindows"] = max(stats["maxOwnedWindows"], total)
@@ -123,4 +128,5 @@ while not stop_file.exists():
     stats["samples"] += 1
     time.sleep(0.02)
 stats["observedProcessCount"] = len(observed)
+stats["observedUniquePidCount"] = len(observed_pids)
 print(json.dumps(stats), flush=True)

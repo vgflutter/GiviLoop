@@ -92,7 +92,9 @@ if (values['foreground-control']) {
           const observed = await bounded(observer.done, 10000);
           assert.equal(observed.code, 0, observed.stderr);
           report[name] = JSON.parse(observed.stdout.trim().split(/\r?\n/).at(-1));
-          report[name].launchedProcessCount = readFileSync(pids, 'utf8').trim().split(/\r?\n/).filter(Boolean).length;
+          const launches = readFileSync(pids, 'utf8').trim().split(/\r?\n/).filter(Boolean);
+          report[name].launchedProcessCount = launches.length;
+          report[name].launchedUniquePidCount = new Set(launches).size;
         } finally { if (observer.child.exitCode === null) observer.child.kill(); }
       }
       assert.equal(report[name].enumerationFailures, 0);

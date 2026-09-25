@@ -13,6 +13,7 @@ var foregroundSamples = 0
 var maxOwnedWindows = 0
 var maxOnscreenWindows = 0
 var observedPids = Set<Int>()
+var observedLaunches = Set<Int>()
 var enumerationFailures = 0
 var maxSampleGapMs = 0.0
 var previousSample = ProcessInfo.processInfo.systemUptime
@@ -26,7 +27,10 @@ while !FileManager.default.fileExists(atPath: stopFile) {
         maxSampleGapMs = max(maxSampleGapMs, (now - previousSample) * 1000)
         previousSample = now
         let text = (try? String(contentsOfFile: pidsFile, encoding: .utf8)) ?? ""
-        let pids = Set(text.split(separator: "\n").compactMap { Int($0) })
+        let launches = text.split(separator: "\n").compactMap { Int($0) }
+        var current = [Int: Int]()
+        for (index, pid) in launches.enumerated() { current[pid] = index }
+        let pids = Set(current.keys)
         let windows = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
         if windows == nil { enumerationFailures += 1 }
         let owned = (windows ?? []).filter { pids.contains(($0[kCGWindowOwnerPID as String] as? Int) ?? -1) }
@@ -46,6 +50,7 @@ while !FileManager.default.fileExists(atPath: stopFile) {
         if pids.contains(front) { foregroundSamples += 1 }
         let live = pids.filter { kill(pid_t($0), 0) == 0 || errno == EPERM }
         observedPids.formUnion(live)
+        observedLaunches.formUnion(live.compactMap { current[$0] })
         if !live.isEmpty { ownedSamples += 1 }
         maxOwnedWindows = max(maxOwnedWindows, owned.count)
         maxOnscreenWindows = max(maxOnscreenWindows, onscreen.count)
@@ -56,7 +61,8 @@ while !FileManager.default.fileExists(atPath: stopFile) {
 }
 let result: [String: Any] = [
     "platform": "darwin", "intervalMs": 20, "samples": samples,
-    "ownedProcessSamples": ownedSamples, "observedProcessCount": observedPids.count,
+    "ownedProcessSamples": ownedSamples, "observedProcessCount": observedLaunches.count,
+    "observedUniquePidCount": observedPids.count,
     "foregroundSamples": foregroundSamples, "maxOwnedWindows": maxOwnedWindows,
     "maxOnscreenWindows": maxOnscreenWindows, "enumerationFailures": enumerationFailures,
     "maxSampleGapMs": maxSampleGapMs

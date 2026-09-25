@@ -684,6 +684,24 @@ for (const change of ['rewrite', 'overlay', 'late-rewrite']) test(`windowless in
   assert.equal(existsSync(f.latest().response), false);
 });
 
+for (const timing of ['before', 'after', 'quoted']) test(`--background verification failure ${timing} submission is distinguished from a response timeout`, { timeout: 20000 }, async t => {
+  const f = setup(t);
+  const message = 'An error occurred during verification, please try again.';
+  const html = readFileSync(f.env.GIVILOOP_TEST_PAGE, 'utf8');
+  const extra = timing === 'after'
+    ? `<script>document.querySelector('[data-testid=composer-submit-button]').onclick=()=>{window.captureSubmission({prompt:document.querySelector('#input').value});const p=document.createElement('p');p.textContent=${JSON.stringify(message)};document.body.append(p);};</script>`
+    : `<p ${timing === 'quoted' ? 'data-message-role="user"' : ''}>${message}</p>`;
+  writeFileSync(f.env.GIVILOOP_TEST_PAGE, html.replace('</body>', extra + '</body>'));
+  const result = await cli(f, 'ask', ['--question', message, '--send', 'chatgpt-web', '--background', '--browser-profile', f.profile, '--response-stable-ms', '100', '--max-wait-ms', '5000']);
+  assert.equal(result.code, timing === 'quoted' ? 0 : 1, result.stderr);
+  if (timing !== 'quoted') assert.match(result.stderr, /ACCESS_CHALLENGE/);
+  const status = JSON.parse(readFileSync(path.join(f.latest().dir, 'browser-status.json')));
+  assert.equal(status.submitted, timing !== 'before');
+  assert.equal(status.verificationRequired, timing !== 'quoted');
+  assert.equal(f.events().filter(event => event.action === 'submit').length, timing === 'before' ? 0 : 1);
+  assert.equal(existsSync(f.latest().response), timing === 'quoted');
+});
+
 test("browser check returns a challenge before a composer or challenge DOM appears", { timeout: 30_000 }, async t => {
   const f = setup(t);
   f.env.GIVILOOP_TEST_HTTP_STATUS = "403";
