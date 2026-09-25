@@ -91,6 +91,12 @@ export async function minimizeBrowser(context: BrowserContext, page: Page): Prom
     for (let attempt = 0; attempt < 20; attempt++) {
       const { bounds } = await session.send("Browser.getWindowBounds", { windowId });
       if (bounds.windowState === "minimized") return;
+      // AppKit can acknowledge "normal" before its restore animation ends,
+      // then ignore the first minimize request. Repeat only this idempotent
+      // window operation, within the existing deadline, after checking state.
+      if (bounds.windowState === "normal" && attempt > 0 && attempt % 5 === 0) {
+        await session.send("Browser.setWindowBounds", { windowId, bounds: { windowState: "minimized" } });
+      }
       await page.waitForTimeout(100);
     }
     throw new Error("Chrome did not confirm a minimized window.");

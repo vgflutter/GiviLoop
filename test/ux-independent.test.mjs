@@ -17,6 +17,26 @@ const { runStatus, resumeRun } = await import(pathToFileURL(path.join(distDir, '
 const { runControl } = await import(pathToFileURL(path.join(distDir, 'run-control.js')));
 const { BrowserSessions } = await import(pathToFileURL(path.join(distDir, 'providers/browser-sessions.js')));
 
+for (const acceptsRetry of [true, false]) test(`window minimization confirms native state after ignored acknowledgement: ${acceptsRetry}`, async () => {
+  const { minimizeBrowser } = await import(pathToFileURL(path.join(distDir, 'providers/browser-runtime.js')));
+  let state = 'maximized', minimizeRequests = 0, waited = 0, detached = false;
+  const session = {
+    async send(method, args) {
+      if (method === 'Browser.setWindowBounds') {
+        if (args.bounds.windowState === 'normal') state = 'normal';
+        else if (++minimizeRequests > 1 && acceptsRetry) state = 'minimized';
+      }
+      return { windowId: 7, bounds: { windowState: state } };
+    },
+    async detach() { detached = true; },
+  };
+  const action = minimizeBrowser({ newCDPSession: async () => session }, { waitForTimeout: async ms => { waited += ms; } });
+  if (acceptsRetry) { await action; assert.equal(state, 'minimized'); assert.equal(minimizeRequests, 2); }
+  else { await assert.rejects(action, /BACKGROUND_UNAVAILABLE/); assert.ok(minimizeRequests <= 4); }
+  assert.ok(waited <= 2000, 'acknowledged but ignored requests must not extend the deadline');
+  assert.equal(detached, true);
+});
+
 // Independent acceptance fixture: an attempt to activate/restore the window is
 // observable even if production catches that attempt and returns another error.
 // No Chrome process, account, network request, or personal profile is used.

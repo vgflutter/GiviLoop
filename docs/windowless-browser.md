@@ -247,7 +247,10 @@ hidden Chrome reported `visibilityState=visible`, ran ordinary timers, but
 delivered zero animation callbacks. Focus emulation, disabled background
 throttling and screenshot capture did not restore those callbacks. A synthetic
 assistant-response regression now updates its DOM in `requestAnimationFrame`
-and verifies completion with the correction. This explains why a successful send alone was insufficient
+and verifies completion with the correction. In the local Linux VM, disabling
+only the rendering preparation in an isolated copy of the compiled product made
+that same test fail with `RESPONSE_TIMEOUT`; the current product passed it.
+This explains why a successful send alone was insufficient
 to validate the complete workflow.
 
 Windowless ChatGPT reviews now install a narrowly scoped scheduling fallback
@@ -268,6 +271,42 @@ recorded 2,168 (156 ms). This experiment preceded integration into the product;
 its diagnostic-only switch has been removed after the integration. The browser
 regressions cover missing/native callbacks, cancellation, origin/frame boundaries
 and a response requiring an animation callback.
+
+## Integrated product validation
+
+After integrating the rendering correction, the unmodified product completed
+two reviews per system in both the [first Windows/Linux cycle](https://github.com/vgflutter/GiviLoop/actions/runs/36112844538)
+and an [independent repetition](https://github.com/vgflutter/GiviLoop/actions/runs/36113231317).
+That is four completed real reviews on each hosted OS, across two fresh anonymous
+profiles. Each pair reused one owned Chrome process. The buggy examples exposed
+the seeded reservation-atomicity and tenant-isolation defects; the corrected
+examples returned `NO_CONFIRMED_FINDINGS`. Requests contained only public synthetic
+fixtures, and their source files remained unchanged.
+
+| Environment | Completed reviews | Visible / foreground samples | Largest sampling gap |
+| --- | ---: | --- | ---: |
+| Windows Server 2025, hosted, first cycle | 2 | 0 / 0 | 172 ms |
+| Windows Server 2025, hosted, repetition | 2 | 0 / 0 | 94 ms |
+| Ubuntu X11, hosted, first cycle | 2 | 0 / 0 | 56 ms |
+| Ubuntu X11, hosted, repetition | 2 | 0 / 0 | 50 ms |
+| macOS, local | 2 | 0 / 0 | 118 ms |
+| Ubuntu X11, local emulated VM | 2 | 0 / 0 | 329 ms |
+
+All six runs passed their visible-window positive control before the review phase
+and reported zero enumeration failures. These are sampled observations during
+reviews, not a claim of continuous observation between samples. The successful
+integrated runs required no experimental switch. Explicit login or verification
+requirements still pause the workflow; future provider availability is not
+guaranteed. Windows 11/ARM, Wayland and authenticated personal accounts were not
+covered by these runs.
+
+The final macOS package check also exposed an intermittent visible-window
+transition failure: after leaving maximized state, Chrome could acknowledge
+minimization without entering that state. The explicit visible-window path now
+rechecks native state and repeats only minimization within the original two-second
+budget. It still fails if Chrome never confirms the state. Five consecutive native
+transition tests passed; deterministic cases cover both eventual success and
+persistent refusal. This path is separate from the windowless review transport.
 
 ## Reproduce from a source checkout
 
