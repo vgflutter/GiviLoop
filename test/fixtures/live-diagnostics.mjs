@@ -33,13 +33,19 @@ if (output) {
         if (url.hostname === 'chatgpt.com' && /^\/(backend-anon\/f|unauth-mweb)\/conversation$/.test(url.pathname)) {
           try {
             const body = await response.text();
-            const fields = new Set(), flags = new Set(); let assistantCharacters = 0, records = 0;
+            const fields = new Set(), flags = new Set(), patchPaths = new Set(), contentPatches = []; let assistantCharacters = 0, records = 0;
             const inspect = (value, depth = 0) => {
               if (!value || typeof value !== 'object' || depth > 12) return;
+              if (typeof value.p === 'string' && /^[a-z_0-9/]{1,160}$/i.test(value.p)) {
+                patchPaths.add(value.p);
+                if (/\bcontent\/parts(?:\/|$)/.test(value.p)) contentPatches.push({ path: value.p,
+                  operation: typeof value.o === 'string' && /^[a-z_]{1,30}$/.test(value.o) ? value.o : undefined,
+                  characters: typeof value.v === 'string' ? value.v.length : Array.isArray(value.v) ? value.v.filter(part => typeof part === 'string').join('').length : 0 });
+              }
               if (value.author?.role === 'assistant') assistantCharacters += (value.content?.parts ?? []).filter(part => typeof part === 'string').join('').length;
               for (const [key, item] of Object.entries(value)) {
                 if (/^[a-z_]{1,50}$/.test(key)) fields.add(key);
-                if (['type','code','error_code','finish_reason','status','end_turn'].includes(key) &&
+                if (['type','code','error_code','finish_reason','status','end_turn','role','channel','content_type'].includes(key) &&
                     (typeof item === 'boolean' || typeof item === 'string' && /^[a-z_ -]{1,70}$/i.test(item))) flags.add(`${key}:${item}`);
                 inspect(item, depth + 1);
               }
@@ -48,7 +54,7 @@ if (output) {
               if (!line.startsWith('data:')) continue;
               try { inspect(JSON.parse(line.slice(5))); records++; } catch { /* SSE terminator. */ }
             }
-            write({ id, event: 'stream-summary', records, fields: [...fields], flags: [...flags], assistantCharacters });
+            write({ id, event: 'stream-summary', records, fields: [...fields], flags: [...flags], assistantCharacters, patchPaths: [...patchPaths], contentPatches });
           } catch { write({ id, event: 'stream-unavailable' }); }
         }
       });
@@ -73,6 +79,7 @@ if (output) {
             messages: [...document.querySelectorAll('[data-message-role],[data-message-author-role]')].map(node => ({
               role: node.getAttribute('data-message-role') ?? node.getAttribute('data-message-author-role'),
               complete: node.getAttribute('data-message-complete'), length: node.innerText?.length,
+              textContentLength: node.textContent?.length, display: getComputedStyle(node).display,
             })),
           }));
           write({ id, event: 'state', ...state });
