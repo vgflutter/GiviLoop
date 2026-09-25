@@ -13,6 +13,7 @@ if (output) {
     const context = await launch(...args);
     // Experimental diagnostic only: never loaded by the shipped product.
     if (process.env.GIVILOOP_TEST_FRAME_FALLBACK === '1') await context.addInitScript(() => {
+      if (window.top !== window || location.origin !== 'https://chatgpt.com') return;
       const request = window.requestAnimationFrame.bind(window);
       const cancel = window.cancelAnimationFrame.bind(window);
       const pending = new Map();
