@@ -645,6 +645,23 @@ test('windowless input recognizes ProseMirror cursor placeholders without trimmi
       await assert.rejects(confirmWindowlessInput(input, text), /text-mismatch/);
       if (change === 'newline') await input.evaluate(node => node.firstElementChild.lastChild.previousSibling.remove());
     }
+    // The live site also hydrates the initial textarea into one paragraph per
+    // line. The editor document is unchanged even though innerText doubles gaps.
+    await input.evaluate((node, text) => {
+      node.classList.add('ProseMirror'); node.replaceChildren();
+      for (const line of text.split('\n')) {
+        const p = document.createElement('p'); p.textContent = line;
+        if (!line) { const br = document.createElement('br'); br.className = 'ProseMirror-trailingBreak'; p.append(br); }
+        node.append(p);
+      }
+    }, text);
+    assert.notEqual(await input.innerText(), text);
+    await confirmWindowlessInput(input, text);
+    await input.evaluate(node => node.append(document.createElement('p')));
+    await assert.rejects(confirmWindowlessInput(input, text), /text-mismatch/);
+    await input.evaluate(node => { node.innerHTML = '<p>one</p><p>two</p>'; });
+    assert.equal(await input.innerText(), 'one\n\ntwo');
+    await assert.rejects(confirmWindowlessInput(input, 'one\n\ntwo'), /text-mismatch/);
   } finally { await context.close(); }
 });
 

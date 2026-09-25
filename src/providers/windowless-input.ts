@@ -7,18 +7,23 @@ export async function confirmWindowlessInput(input: Locator, text: string): Prom
       ? node.value : node instanceof HTMLElement ? node.innerText : undefined;
     if (!node.isConnected) return false;
     const wanted = expected.replace(/\r\n?/g, "\n");
-    if (actual?.replace(/\r\n?/g, "\n") === wanted) return true;
-    // ProseMirror adds a cursor-placeholder BR after a final line break. It
-    // contributes to innerText but not to the editor document. Read only the
-    // observed plain-text paragraph shape; never trim real code whitespace.
-    const paragraph = node.childNodes.length === 1 ? node.firstChild : null;
-    if (!(paragraph instanceof HTMLParagraphElement)) return false;
-    const children = [...paragraph.childNodes];
-    const trailing = children.at(-1);
-    if (!(trailing instanceof HTMLBRElement) || !trailing.classList.contains("ProseMirror-trailingBreak")) return false;
-    children.pop();
-    if (!children.every(child => child.nodeType === Node.TEXT_NODE || child instanceof HTMLBRElement)) return false;
-    return children.map(child => child instanceof HTMLBRElement ? "\n" : child.textContent).join("").replace(/\r\n?/g, "\n") === wanted;
+    // ProseMirror paragraphs represent one line boundary, whereas innerText
+    // renders paragraph spacing too. Its trailing BR is a cursor placeholder,
+    // not document content. Decode only this known plain-text structure; do
+    // not trim whitespace or accept arbitrary rich-text transformations.
+    if (!(node instanceof HTMLElement) || !(node.classList.contains("ProseMirror") ||
+        node.querySelector("br.ProseMirror-trailingBreak"))) return actual?.replace(/\r\n?/g, "\n") === wanted;
+    const paragraphs: string[] = [];
+    for (const paragraph of node.childNodes) {
+      if (!(paragraph instanceof HTMLParagraphElement)) return false;
+      const children = [...paragraph.childNodes];
+      const trailing = children.at(-1);
+      if (trailing instanceof HTMLBRElement && trailing.classList.contains("ProseMirror-trailingBreak")) children.pop();
+      if (!children.every(child => child.nodeType === Node.TEXT_NODE ||
+          child instanceof HTMLBRElement && !child.classList.contains("ProseMirror-trailingBreak"))) return false;
+      paragraphs.push(children.map(child => child instanceof HTMLBRElement ? "\n" : child.textContent).join(""));
+    }
+    return paragraphs.join("\n").replace(/\r\n?/g, "\n") === wanted;
   }, text);
   if (!confirmed) throw new BrowserRunError("BROWSER_INTERACTION_REQUIRED",
     "The windowless composer changed before submission (text-mismatch). No prompt was sent.");
