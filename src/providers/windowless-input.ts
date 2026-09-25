@@ -13,10 +13,11 @@ export async function confirmWindowlessInput(input: Locator, text: string): Prom
     // not trim whitespace or accept arbitrary rich-text transformations.
     if (!(node instanceof HTMLElement) || !(node.classList.contains("ProseMirror") ||
         node.querySelector("br.ProseMirror-trailingBreak"))) return actual?.replace(/\r\n?/g, "\n") === wanted;
+    const nodes = [...node.childNodes];
+    const blocks = nodes.every(child => child instanceof HTMLParagraphElement)
+      ? nodes.map(paragraph => [...paragraph.childNodes]) : [nodes];
     const paragraphs: string[] = [];
-    for (const paragraph of node.childNodes) {
-      if (!(paragraph instanceof HTMLParagraphElement)) return false;
-      const children = [...paragraph.childNodes];
+    for (const children of blocks) {
       const trailing = children.at(-1);
       if (trailing instanceof HTMLBRElement && trailing.classList.contains("ProseMirror-trailingBreak")) children.pop();
       if (!children.every(child => child.nodeType === Node.TEXT_NODE ||
