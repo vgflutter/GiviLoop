@@ -329,6 +329,14 @@ explicitly awaits release of retained MCP browser sessions before closing the
 SDK transport, and retries transient file locks for at most three seconds.
 The independent stdin-EOF shutdown regression remains in place.
 
+Subsequent Windows repetitions passed the previously failing case but hit
+different fixture startup/response deadlines. The Windows browser harness now
+uses a factor of two for overall case, startup/shutdown and successful-response
+budgets; the package report records `browserBudgetScale: 2`. Deliberate negative
+response timeouts (including the 1,400 ms incomplete-response case), assertions,
+single-send checks and product defaults are unchanged. The CI job allows 25
+minutes for installation, package checks and desktop observation together.
+
 The local macOS full suite also encountered intermittent normal Chrome exits
 during explicit foreground cookie/verification tests; those failures are not
 counted as passes or attributed to a confirmed cause. The isolated macOS package
