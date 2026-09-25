@@ -308,6 +308,32 @@ budget. It still fails if Chrome never confirms the state. Five consecutive nati
 transition tests passed; deterministic cases cover both eventual success and
 persistent refusal. This path is separate from the windowless review transport.
 
+Installed-package checks passed on the final product code:
+
+| System | Unit tests passed / skipped | Browser tests passed / skipped | Audit vulnerabilities |
+| --- | --- | --- | ---: |
+| macOS hosted | 228 / 0 | 70 / 0 | 0 |
+| Linux hosted | 228 / 0 | 70 / 0 | 0 |
+| Windows hosted | 216 / 12 | 69 / 1 | 0 |
+
+The [Windows/Linux package run](https://github.com/vgflutter/GiviLoop/actions/runs/36114966152)
+also passed all nine OS/Node unit-test combinations. The **macOS job** of the
+[expanded run](https://github.com/vgflutter/GiviLoop/actions/runs/36115953674)
+passed the complete package and desktop checks. Each OS observer covered all 39
+background launch records with zero visible/foreground samples and zero
+enumeration failures. Windows skips concern POSIX-specific cases.
+
+The expanded run's Windows job failed in fixture cleanup on a locked temporary
+Chrome metadata file, after its review assertions passed. Fixture cleanup now
+explicitly awaits release of retained MCP browser sessions before closing the
+SDK transport, and retries transient file locks for at most three seconds.
+The independent stdin-EOF shutdown regression remains in place.
+
+The local macOS full suite also encountered intermittent normal Chrome exits
+during explicit foreground cookie/verification tests; those failures are not
+counted as passes or attributed to a confirmed cause. The isolated macOS package
+run passed these same cases. Local real windowless reviews passed independently.
+
 ## Reproduce from a source checkout
 
 The normal package check installs the actual tarball into a temporary consumer,

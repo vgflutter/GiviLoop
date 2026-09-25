@@ -13,7 +13,9 @@ export function fixture(t, { git = false } = {}) {
   const root = mkdtempSync(path.join(os.tmpdir(), "giviloop-flow-"));
   const repo = path.join(root, "repo with spaces è");
   mkdirSync(repo);
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  // Windows may retain a transient file handle briefly after a child exits.
+  // Bound retries; a profile still owned by a process must still fail cleanup.
+  t.after(() => rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
   const clipboard = path.join(root, "clipboard.txt");
   const calls = path.join(root, "os-calls.jsonl");
   writeFileSync(clipboard, "");

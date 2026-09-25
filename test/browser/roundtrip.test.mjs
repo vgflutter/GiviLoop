@@ -312,9 +312,20 @@ async function cli(f, command, args = []) {
 
 async function connect(t, f) {
   const client = new Client({ name: "giviloop-browser-test", version: "1.0.0" });
-  f.own(() => client.close());
+  let connected = false;
+  f.own(async () => {
+    try {
+      // Await Chrome shutdown before the SDK's short stdio-close deadline can
+      // terminate the server. EOF shutdown itself has a separate regression.
+      if (connected) {
+        const released = await client.callTool({ name: 'givi_release_browser_sessions', arguments: {} });
+        assert.notEqual(released.isError, true, JSON.stringify(released));
+      }
+    } finally { await client.close(); }
+  });
   await client.connect(new StdioClientTransport({ command: process.execPath,
     args: ["--import", preload, path.join(distDir, "mcp-server.js")], cwd: repoRoot, env: f.env, stderr: "pipe" }));
+  connected = true;
   return client;
 }
 
