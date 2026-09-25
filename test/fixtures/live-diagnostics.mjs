@@ -25,10 +25,9 @@ if (output) {
           write({ id, event: 'http', path: url.pathname.replace(/[a-f0-9-]{24,}/gi, ':id'), status: response.status() });
         }
       });
-      let busy = false;
-      const sample = async () => {
-        if (busy || page.isClosed() || !page.url().startsWith('https://chatgpt.com/')) return;
-        busy = true;
+      let pending;
+      const collect = async () => {
+        if (page.isClosed() || !page.url().startsWith('https://chatgpt.com/')) return;
         try {
           const state = await page.evaluate(() => ({
             ready: document.readyState, visibility: document.visibilityState,
@@ -51,8 +50,8 @@ if (output) {
           }));
           write({ id, event: 'state', ...state });
         } catch (error) { write({ id, event: 'snapshot-error', error: String(error).slice(0, 400) }); }
-        finally { busy = false; }
       };
+      const sample = () => pending ??= collect().finally(() => { pending = undefined; });
       const timer = setInterval(() => void sample(), 2000);
       timer.unref();
       page.once('close', () => clearInterval(timer));
