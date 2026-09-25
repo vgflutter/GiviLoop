@@ -6,15 +6,15 @@ import { BrowserRunError } from "./browser-runtime.js";
 // command and DOM activation instead. Never alter event trust or page scripts.
 export async function fillWindowlessInput(input: Locator, text: string): Promise<void> {
   const filled = await input.evaluate((node, value) => {
-    if (!(node instanceof HTMLElement) || !node.isConnected || node.closest('[inert]')) return false;
+    if (!(node instanceof HTMLElement) || !node.isConnected || node.closest('[inert]')) return 'unavailable';
     const field = node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement;
-    if (field ? node.disabled || node.readOnly : !node.isContentEditable) return false;
+    if (field ? node.disabled || node.readOnly : !node.isContentEditable) return 'read-only';
     node.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
     const box = node.getBoundingClientRect();
     const style = getComputedStyle(node);
-    if (!box.width || !box.height || style.visibility !== "visible" || style.display === "none") return false;
+    if (!box.width || !box.height || style.visibility !== "visible" || style.display === "none") return 'not-visible';
     const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-    if (!hit || !node.contains(hit)) return false;
+    if (!hit || !node.contains(hit)) return 'covered';
     node.focus();
     if (field) node.select();
     else {
@@ -26,10 +26,10 @@ export async function fillWindowlessInput(input: Locator, text: string): Promise
     const html = value.replace(/\r\n?/g, "\n").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\n", "<br>");
     const inserted = document.execCommand(field ? "insertText" : "insertHTML", false, field ? value : html);
     const actual = field ? node.value : node.innerText;
-    return inserted && actual.replace(/\r\n?/g, "\n") === value.replace(/\r\n?/g, "\n");
+    return !inserted ? "editing-rejected" : actual.replace(/\r\n?/g, "\n") === value.replace(/\r\n?/g, "\n") ? "confirmed" : "text-mismatch";
   }, text);
-  if (!filled) throw new BrowserRunError("BROWSER_INTERACTION_REQUIRED",
-    "The windowless composer did not confirm the complete request. Use givi resume --foreground. No prompt was sent.");
+  if (filled !== "confirmed") throw new BrowserRunError("BROWSER_INTERACTION_REQUIRED",
+    `The windowless composer did not confirm the complete request (${filled}). Use givi resume --foreground. No prompt was sent.`);
 }
 
 export async function activateWindowlessControl(control: Locator, enter: boolean, choice = false): Promise<void> {

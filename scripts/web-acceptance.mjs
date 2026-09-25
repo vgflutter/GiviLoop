@@ -105,7 +105,7 @@ const question='Rispondi in italiano, entro 700 parole. Controlla i comportament
 try {
   writeSources(false); writeFileSync(path.join(repo,files[2]),pagination);
   for (const args of [['init'],['add','.'],['-c','user.name=GiviLoop fixture','-c','user.email=fixture@example.invalid','commit','-m','Known-correct synthetic baseline']]) execFileSync('git',args,{cwd:repo,stdio:'ignore'});
-  await client.connect(new StdioClientTransport({command:process.execPath,args:[path.join(root,'dist/mcp-server.js')],env:{...process.env,GIVILOOP_ALLOWED_REPOSITORIES:repo},stderr:'pipe'}));
+  await client.connect(new StdioClientTransport({command:process.execPath,args:['--import',pathToFileURL(path.join(root,'test/fixtures/live-diagnostics.mjs')).href,path.join(root,'dist/mcp-server.js')],env:{...process.env,GIVILOOP_ALLOWED_REPOSITORIES:repo,GIVILOOP_SYNTHETIC_DIAGNOSTICS:output},stderr:'pipe'}));
   for (const phase of ['buggy','fixed']) {
     writeSources(phase==='buggy');
     const checks=await independentChecks(phase), before=snapshot();
