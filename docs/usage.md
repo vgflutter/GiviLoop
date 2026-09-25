@@ -33,6 +33,71 @@ unless `--send` is explicit. `help` shows the short command list; `help --all`
 shows the complete reference. After building, `npm link` exposes the current
 checkout as `givi` to avoid the `npm run givi --` prefix.
 
+## Complete command map
+
+After installation/linking, use `givi` in your project. Every command supports
+`--repo PATH` and `--help`; `givi help COMMAND` shows the same focused help.
+Existing named options remain available. Unknown options, duplicate single-value
+options and ambiguous positional arguments fail before an operation starts.
+
+| Task | Short command | Effect |
+| --- | --- | --- |
+| Configure | `givi setup` | Save project preferences; optional login/check/demo |
+| Log in | `givi login` | Explicitly open the dedicated Chrome profile; close it before sending |
+| Check browser access | `givi check` | Test access without sending a prompt |
+| Diagnose | `givi doctor` | Check saved runtime or Chrome installation/profile |
+| Discover local models | `givi models` | Query the saved local runtime |
+| Try the demo | `givi demo --offline` | Local authored example; omit `--offline` for a real public-example review |
+| Review changes | `givi review "Check edge cases"` | Prepare and send Git changes; `-f PATH` selects files instead |
+| Second opinion | `givi opinion "Compare these approaches" -f proposal.md` | Send the question and selected files |
+| Prepare a question | `givi ask "Check edge cases" -f src/cart.ts` | Prepare only; `--send NAME` explicitly sends |
+| Prepare changes | `givi prepare "Check edge cases"` | Prepare a Git review without sending |
+| Prepare source ZIP | `givi archive "Review architecture"` | Prepare only; ZIP uploads require an explicit send and foreground mode |
+| Send prepared context | `givi send [RUN_ID]` | Send using saved preferences |
+| Manual transfer | `givi copy [RUN_ID]` → `givi ingest [RUN_ID]` | Copy request; after manual submission, save clipboard answer |
+| Read answer | `givi answer [RUN_ID]` | Print completed response without browser/network |
+| Track progress | `givi status [RUN_ID]` | Show state and next step; `--json` for scripts |
+| Resolve attention | `givi open [RUN_ID]` → `givi resume [RUN_ID]` | Explicit visible setup, close Chrome, then continue only if proven unsent |
+| Cancel | `givi cancel [RUN_ID]` | Request cancellation; does not retract a submitted prompt |
+| Export report | `givi report [RUN_ID]` | Save Markdown; `--stdout` prints without saving |
+| Read findings | `givi findings` | Same as `findings list` |
+| Record findings | `givi findings add/update --run-id ID ...` | Explicit write; see `givi findings --help` and the evidence guide |
+| Recheck a finding | `givi recheck FINDING_ID [--run-id ID]` | Prepare fresh context without sending |
+| Automatic review | `givi auto-review` | Show status; `enable`/`disable` explicitly change integration |
+
+Square brackets denote optional arguments; do not type the brackets.
+`RUN_ID` defaults to the latest run. Positional IDs are equivalent to `--run-id ID`;
+`recheck FINDING_ID` is equivalent to `--finding-id ID`. Finding writes still
+require an explicit run ID. `login`/`check` are aliases for `browser login/check`.
+
+`--provider NAME` is accepted consistently on `review`, `opinion` and `send` as
+an alias for `--send NAME`. On `ask` and `archive`, use explicit `--send NAME`
+to send; their prepare-only default is preserved. On manual preparation commands,
+legacy `--provider` still selects the prompt target; prefer `--target-provider`.
+Legacy `--provider NAME-chat` prompt targets are also preserved.
+Do not combine `--provider NAME-web` (or a local provider) and `--send`
+on commands where they are aliases.
+`-f PATH`, `-fPATH` and `--file PATH` are equivalent wherever files are supported.
+
+For manual transfer:
+
+```sh
+givi ask "Find concrete bugs" -f src/cart.ts
+givi copy --open
+# Paste/send in the website, then copy its answer.
+givi ingest
+givi answer
+```
+
+For a local reviewer, configure once rather than repeating delivery options:
+
+```sh
+givi models --provider ollama
+givi setup --provider ollama --model MODEL_FROM_DISCOVERY --non-interactive
+givi opinion "Find concrete bugs" -f src/cart.ts
+givi answer
+```
+
 ## Installation and requirements
 
 From a checkout, run `npm ci` and `npm run build`. Examples below use `npm run givi --`; after a global installation, use `givi` instead.
@@ -161,7 +226,7 @@ For an existing request:
 
 Visible sessions use native Chrome with a temporary loopback DevTools connection and the existing dedicated profile. One-shot CLI runs wait for the owned browser process to exit on completion or cancellation; MCP can retain an idle healthy browser. See [provider results and limitations](web-providers.md).
 
-When provider access is available, auto mode fills the prompt, sends once, waits for a completed answer and saves it. No clipboard interaction is required. Chrome starts without a startup window, loads GiviLoop's bundled offscreen extension in the dedicated profile and creates a hidden top-level review page. Quiet mode pauses for login, cookie choices, human verification and ZIP uploads. Use `givi status`, `givi open`, quit Chrome after setup, then `givi resume`. ZIP uploads require explicit `--foreground`. `WINDOWLESS_UNAVAILABLE` stops without opening a visible fallback. The implementation is validated on macOS; Windows/Linux VM checks are pending. [Requirements and evidence](windowless-browser.md).
+When provider access is available, auto mode fills the prompt, sends once, waits for a completed answer and saves it. No clipboard interaction is required. Chrome starts without a startup window, loads GiviLoop's bundled offscreen extension in the dedicated profile and creates a hidden top-level review page. Quiet mode pauses for login, cookie choices, human verification and ZIP uploads. Use `givi status`, `givi open`, quit Chrome after setup, then `givi resume`. ZIP uploads require explicit `--foreground`. `WINDOWLESS_UNAVAILABLE` stops without opening a visible fallback. Real windowless ChatGPT reviews have been validated on macOS, Windows Server 2025 and Ubuntu X11; see the evidence page for tested revisions and limits. [Requirements and evidence](windowless-browser.md).
 
 CLI closes Chrome on completion. MCP retains healthy quiet sessions for up to 60 seconds idle, at most two dedicated profiles, and starts each review in a fresh conversation. It closes failed/cancelled sessions and closes retained sessions on disconnect. `givi_release_browser_sessions` closes idle sessions before manual login. Concurrent use of the same profile is refused.
 

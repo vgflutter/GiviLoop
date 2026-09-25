@@ -111,6 +111,27 @@ test('opinion sends selected context with saved defaults; answer prints it witho
   assert.deepEqual(f.osCalls(), []);
 });
 
+test('send positional ID selects the older request; review positional goal reaches selected-file context', async t => {
+  const f = fixture(t), server = await localServer(t, 'ollama');
+  writeFileSync(path.join(f.repo, 'selected.ts'), 'SELECTED_ONLY');
+  const setup = await cli(f, 'setup', ['--provider', 'ollama', '--model', modelFor('ollama'), '--base-url', server.url, '--non-interactive']);
+  assert.equal(setup.code, 0, setup.stderr);
+  assert.equal((await cli(f, 'ask', ['FIRST_REQUEST', '-fselected.ts'])).code, 0);
+  const first = f.latest();
+  assert.equal((await cli(f, 'ask', ['SECOND_UNSENT_REQUEST'])).code, 0);
+  const sent = await cli(f, 'send', [first.id, '--provider', 'ollama']);
+  assert.equal(sent.code, 0, sent.stderr);
+  const reviewed = await cli(f, 'review', ['CUSTOM_SELECTED_GOAL', '-fselected.ts']);
+  assert.equal(reviewed.code, 0, reviewed.stderr);
+  const calls = server.calls.filter(c => c.path === '/api/chat');
+  assert.equal(calls.length, 2);
+  assert.match(calls[0].body.messages[0].content, /FIRST_REQUEST/);
+  assert.doesNotMatch(calls[0].body.messages[0].content, /SECOND_UNSENT_REQUEST/);
+  assert.match(calls[1].body.messages[0].content, /CUSTOM_SELECTED_GOAL/);
+  assert.match(calls[1].body.messages[0].content, /SELECTED_ONLY/);
+  assert.deepEqual(f.osCalls(), []);
+});
+
 for (const provider of ["ollama", "dwarfstar", "llama-cpp", "lmstudio", "mlx"]) {
   test(`${provider}: CLI local ask -> saved final answer/usage -> MCP read, no browser or clipboard`, async t => {
     const f = fixture(t), server = await localServer(t, provider);

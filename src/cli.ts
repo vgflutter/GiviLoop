@@ -21,7 +21,7 @@ import { pruneCompletedRuns, RUN_ID_PATTERN } from "./run-storage.js";
 import { VERSION } from "./version.js";
 import { setupCommand, findingsCommand, recheckCommand, demoCommand, reportCommand, autoReviewCommand } from "./workflow-commands.js";
 import { configuredCliArgs } from "./cli-preferences.js";
-import { opinionArgs } from "./cli-shortcuts.js";
+import { commandHelp, normalizeCliArgs } from "./cli-interface.js";
 import { runStatus, cancelRun, openRun, resumeRun, readRunAnswer } from "./run-status.js";
 import { probeLocalProvider, readLocalProvider, readLocalReasoning, sendLocalReview } from "./providers/local-review.js";
 import {
@@ -119,12 +119,21 @@ type Command =
 
 async function main(): Promise<void> {
   let args = process.argv.slice(2);
-  const command = (args[0] ?? "help") as Command;
+  let command = (args[0] ?? "help") as Command;
 
   try {
-    if (args.includes("--help") || args.includes("-h")) { printHelp(args.includes("--all")); return; }
-    if (args[0] === "--version") { console.log(VERSION); return; }
-    if (command === "opinion") args = [command, ...opinionArgs(args.slice(1))];
+    if (["--help", "-h"].includes(args[0]) || command === "help") {
+      const rest = args.slice(1);
+      if (rest.length > 1) throw new Error("Usage: givi help [COMMAND | --all]");
+      if (rest[0] && !["--all", "--help", "-h"].includes(rest[0])) console.log(commandHelp(rest[0]));
+      else printHelp(rest[0] === "--all");
+      return;
+    }
+    if (args[0] === "--version" && args.length === 1) { console.log(VERSION); return; }
+    const requestedCommand = command;
+    args = normalizeCliArgs(args);
+    command = args[0] as Command;
+    if (args[1] === "--help") { console.log(commandHelp(requestedCommand)); return; }
     args = configuredCliArgs(args);
     switch (command) {
       case "opinion": await ask(args.slice(1)); break;
@@ -138,7 +147,7 @@ async function main(): Promise<void> {
         const options = args.slice(1);
         if (readOption(options, "--run-id")) throw new Error("review creates a new run. Use send or resume to select an existing --run-id.");
         if (readOptions(options, "--file").length || readOptions(options, "-f").length || readOption(options, "--question")) {
-          if (!readOption(options, "--question")) options.push("--question", "Find concrete bugs, minimal corrections and regression tests. Respect the supplied contract.");
+          if (!readOption(options, "--question")) options.push("--question", readOption(options, "--goal") ?? "Find concrete bugs, minimal corrections and regression tests. Respect the supplied contract.");
           await ask(options);
         } else {
           if (!readOption(options, "--goal")) options.push("--goal", "Find concrete bugs, minimal corrections and regression tests.");
@@ -1984,29 +1993,40 @@ function printHelp(detailed = false): void {
   if (!detailed) {
     console.log(`GiviLoop ${VERSION}
 
-Run in your project. Choose a reviewer once:
-  givi setup
+Run in your project; use --repo PATH for another project.
 
-Everyday commands:
-  givi review                      Review and send current Git changes.
-  givi review -f src/example.ts     Review and send one selected file.
-  givi opinion "Your question"      Ask and send a second opinion.
-  givi opinion "Compare options" -f proposal.md
-  givi answer                      Print the latest completed answer.
-  givi status                      Show progress or the next action.
+Start and configure:
+  setup                 Save your reviewer, model and browser profile.
+  login / check         Sign in visibly / check browser access without sending.
+  doctor / models       Diagnose your provider / list local models.
+  demo --offline        Try the workflow without an account.
 
-Use the saved provider/profile; ChatGPT is the default if unconfigured.
-Web reviews use background mode by default. --background overrides a saved
-foreground choice; Chrome's Dock icon may appear, but no review window opens.
-An opinion includes only your question and explicitly selected files.
+Prepare and send:
+  review ["Goal"]       Send Git changes (or selected files with -f PATH).
+  opinion "Question"    Send a question; attach files with repeated -f PATH.
+  ask "Question"        Prepare only; --send NAME explicitly sends.
+  prepare ["Goal"]      Prepare Git changes without sending.
+  archive ["Goal"]      Prepare a source ZIP; sending is explicit.
+  send [RUN_ID]         Send a prepared request using saved preferences.
+  copy / ingest        Copy a request / save the clipboard answer manually.
 
-If login/setup is needed: givi open, finish setup and close Chrome, then givi resume.
-givi cancel requests cancellation; it cannot retract an already sent prompt.
+Read and control a run (optional RUN_ID; latest by default):
+  answer / status       Read the answer / see progress and the next action.
+  open / resume         Open login/setup visibly, close Chrome, then resume.
+  cancel                Stop an active run; cannot retract a sent prompt.
+  report                Save a findings report; --stdout prints without saving.
 
-givi ask --question "..." prepares without sending unless --send is specified.
-givi demo --offline shows a local example without contacting a provider.
-Use --repo PATH for another project; answer/status also accept --run-id ID.
-givi help --all                   All commands and advanced options.
+Findings and automation:
+  findings              List findings; add/update explicitly record decisions.
+  recheck FINDING_ID    Prepare fresh context without sending.
+  auto-review           Show status; enable/disable are explicit choices.
+
+Saved settings are reused. Web sends use background mode by default;
+--background overrides a saved foreground choice. Chrome's Dock icon may appear.
+Manual-provider preferences require manual transfer or an explicit send provider.
+
+givi COMMAND --help     Options and usage for that command.
+givi help --all         Complete command and option reference.
 `);
     return;
   }
@@ -2037,6 +2057,16 @@ Core flows:
 Web reviews make no separately billed model API call through GiviLoop.
 Chat quotas and provider terms still apply; total token savings are not measured.
 The browser adapter is experimental. See docs/costs-and-access.md.
+
+Short forms:
+  givi login / givi check          Aliases for browser login / browser check.
+  givi ask "Question" -f file.ts   Prepare only.
+  givi prepare "Goal"             Prepare only.
+  givi answer RUN_ID              Same as answer --run-id RUN_ID.
+  givi recheck FINDING_ID         Same as recheck --finding-id FINDING_ID.
+  givi findings / auto-review     Read-only list / status by default.
+  --provider NAME                Alias for --send on review, opinion and send.
+  givi COMMAND --help            Command-specific options.
 
 Commands:
   auto-review  enable|disable|status: opt into end-of-task review through AGENTS.md + MCP.

@@ -51,8 +51,6 @@ export async function setup(options: SetupOptions) {
     const server = fileURLToPath(new URL("mcp-server.js", import.meta.url));
     const prefix = `${quote(process.execPath)} ${quote(cli)}`;
     const common = ` --repo ${quote(root)}`;
-    const profileArgument = profile ? ` --browser-profile ${quote(profile)}` : "";
-    const baseArgument = options.baseUrl ? ` --base-url ${quote(options.baseUrl)}` : "";
     const configDirectory = safePath(root, ".giviloop");
     mkdirSync(configDirectory, { recursive: true });
     const mcpPath = safePath(root, ".giviloop/mcp.json");
@@ -64,12 +62,12 @@ export async function setup(options: SetupOptions) {
       access: "not checked", mcpConfigPath: mcpPath, mcpConfig: mcp,
       instructions: "Provider preferences saved in .giviloop/preferences.json. Use givi review for an automatic review, or givi ask to prepare without sending. Merge the MCP entry into your client and restart it; setup does not edit editor settings. Add .giviloop/ to .gitignore.",
       nextCommands: isWebProvider(provider) ? {
-        login: `${prefix} browser login --provider ${provider}${profileArgument}`,
-        check: `${prefix} browser check --provider ${provider}${profileArgument}`,
-        demo: `${prefix} setup${common} --provider ${provider}${profileArgument} --non-interactive --demo`,
+        login: `${prefix} login${common}`,
+        check: `${prefix} check${common}`,
+        demo: `${prefix} demo${common}`,
       } : isLocalProvider(provider) ? {
-        check: `${prefix} models --provider ${provider}${baseArgument}`,
-        demo: `${prefix} setup${common} --provider ${provider}${baseArgument} --non-interactive --model ${options.model ? quote(options.model) : "MODEL"} --demo`,
+        check: `${prefix} models${common}`,
+        demo: options.model ? `${prefix} demo${common}` : `${prefix} setup${common} --non-interactive --model MODEL --demo`,
       } : { prepare: `${prefix} prepare${common} --goal 'Find concrete bugs'`, copy: `${prefix} copy${common} --open`, ingest: `${prefix} ingest${common}` },
       limitations: "Web setup checks the composer only, not generation, a subscription model or authorization. Human verification may recur. No prompt is sent unless you explicitly choose the public demo.",
     };

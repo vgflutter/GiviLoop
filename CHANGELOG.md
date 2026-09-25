@@ -4,6 +4,8 @@ Release summaries. Historical validation reports and full development notes rema
 
 ## Unreleased
 
+- Review the entire CLI: task-grouped help, focused help for every command, strict shared option validation, positional questions/goals/run IDs, compact file options, direct `login`/`check`, and read-only defaults for `findings`/`auto-review`. Preserve named options and prepare-only workflows. Setup next commands now reuse saved preferences and explicitly select the configured repository.
+
 - Simplify everyday CLI use: `opinion "question" [-f path]` sends a second opinion with saved provider settings; `answer` prints a completed response without sending again. Keep `ask` prepare-only, reject ambiguous questions, and refuse stale/failed answers. Show concise help by default and the complete reference with `help --all`.
 - Confirm visible-window minimization after Chrome acknowledges but ignores a request during a native restore animation. Repeat only the idempotent window operation within the existing deadline; an unconfirmed state still fails explicitly.
 - Keep ChatGPT response rendering active in hidden Chrome pages: native animation callbacks are used when available, with a 100 ms timer fallback for callbacks Chrome stalls. Preserve cancellation and single delivery; restrict the compatibility code to the configured top-level chat origin, leaving child frames and authentication pages unchanged.

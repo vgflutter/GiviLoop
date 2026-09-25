@@ -84,7 +84,15 @@ review window. These commands do not apply code changes.
 From a checkout, replace `givi` with `npm run givi --`. To expose this checkout as
 `givi`, run `npm link` once after building. Run commands in the project being
 reviewed, or use `--repo PATH`; configuration is saved separately for each project.
-`givi help` shows everyday commands; `givi help --all` lists advanced options.
+`givi help` groups all commands by task; `givi COMMAND --help` (or `givi help COMMAND`)
+shows focused help, and `givi help --all` lists advanced options.
+Use `givi login` / `givi check` for browser access, `givi doctor` for diagnostics
+and `givi models` for local model discovery. `givi ask "Question"` and
+`givi prepare "Goal"` provide short prepare-only forms.
+`givi answer ID`, `status ID`, `send ID`, `copy ID`, `ingest ID`, `open ID`,
+`resume ID`, `cancel ID` and `report ID` select a saved run; omit ID for the latest.
+`givi findings` lists findings, `givi recheck FINDING_ID` prepares a recheck, and
+`givi auto-review` shows automation status. [Complete command map](docs/usage.md#complete-command-map).
 `givi ask` and `givi prepare` still only prepare context unless sending is explicit.
 
 - `givi status` — see progress, the saved answer and the next action.

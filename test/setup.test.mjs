@@ -26,7 +26,8 @@ test('setup defaults are non-blocking on piped input; no implicit login or gener
   const report = JSON.parse(result.stdout);
   assert.equal(report.provider, 'chatgpt-web');
   assert.equal(report.access, 'not checked');
-  assert.match(report.nextCommands.login, /chatgpt-web/);
+  assert.match(report.nextCommands.login, / login --repo /);
+  assert.ok(report.nextCommands.login.includes(f.repo));
   assert.deepEqual(f.osCalls(), []);
 });
 
