@@ -102,6 +102,15 @@ and `givi models` for local model discovery. `givi ask "Question"` and
 
 MCP reuses a healthy windowless Chrome for subsequent reviews, with separate conversations, for up to 60 seconds idle. CLI commands close it after each review. [Defaults and controls](docs/setup-and-evidence.md#saved-defaults-and-quiet-reviews).
 
+## Optional HOL Guard integration
+
+A contribution is being prepared for an opt-in HOL Guard extension covering six
+direct CLI operations: automatic-review configuration/execution and finding writes.
+GiviLoop remains independent of Guard. This first contribution does not cover direct
+MCP calls, npm/Node wrappers, or other sends such as `review` and `opinion`; it is
+not yet accepted, released or enabled on your device.
+[How the integration works and its boundaries](docs/hol-guard.md).
+
 ## Use it from your coding agent
 
 Add this stdio server to your MCP client's configuration:

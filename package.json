@@ -38,6 +38,7 @@
     "docs/setup-and-evidence.md",
     "docs/troubleshooting.md",
     "docs/usage.md",
+    "docs/hol-guard.md",
     "docs/web-providers.md",
     "docs/windowless-browser.md",
     "examples/double-check/sum.ts",
