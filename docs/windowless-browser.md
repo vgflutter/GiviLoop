@@ -337,6 +337,11 @@ response timeouts (including the 1,400 ms incomplete-response case), assertions,
 single-send checks and product defaults are unchanged. The CI job allows 25
 minutes for installation, package checks and desktop observation together.
 
+The [final complete run](https://github.com/vgflutter/GiviLoop/actions/runs/36120310020)
+on `3f64aca` passed **all 12 jobs**: nine OS/Node unit combinations and the
+installed-package/browser/desktop checks on all three OS families. The counts
+in the table above were confirmed, with zero audit vulnerabilities on each OS.
+
 The local macOS full suite also encountered intermittent normal Chrome exits
 during explicit foreground cookie/verification tests; those failures are not
 counted as passes or attributed to a confirmed cause. The isolated macOS package
@@ -357,7 +362,8 @@ npm run test:package -- --browser
 For slower emulated VMs, `npm run test:package -- --browser --slow-vm` doubles
 only the overall unit/browser suite budgets (to eight and twenty minutes).
 Individual test deadlines, assertions and provider wait limits are unchanged.
-The package report records this option; native CI uses the normal budgets.
+The package report records this option separately from the Windows browser
+budget factor described above; hosted CI does not enable `--slow-vm`.
 
 The full browser suite deliberately opens windows for explicit foreground/login
 handoff checks. To run just the windowless regressions:
