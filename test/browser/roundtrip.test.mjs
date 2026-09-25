@@ -619,6 +619,35 @@ test("a login wall without an editable composer is reported without submitting",
   assert.equal(existsSync(path.join(f.repo, ".giviloop/latest-run-id")), false);
 });
 
+test('windowless input recognizes ProseMirror cursor placeholders without trimming code', { timeout: 20000 }, async t => {
+  const f = fixture(t);
+  const { nativeChrome } = await import(pathToFileURL(path.join(distDir, 'providers/native-chrome.js')));
+  const { fillWindowlessInput, confirmWindowlessInput } = await import(pathToFileURL(path.join(distDir, 'providers/windowless-input.js')));
+  const context = await nativeChrome.launch(path.join(f.root, 'rich-editor'), true);
+  try {
+    const page = context.pages()[0];
+    await page.setContent('<div contenteditable="true" style="white-space:pre-wrap"><p><br></p></div>');
+    const input = page.locator('[contenteditable]');
+    await input.evaluate(node => node.addEventListener('input', () => {
+      const placeholder = document.createElement('br'); placeholder.className = 'ProseMirror-trailingBreak';
+      node.firstElementChild.append(placeholder);
+    }));
+    const text = '  const html = "<p>&</p>";\n\treturn html;\n\n';
+    await fillWindowlessInput(input, text);
+    assert.equal(await input.innerText(), text + '\n', 'Reproduce the extra editor-only line break');
+    await confirmWindowlessInput(input, text);
+    for (const change of ['newline', 'indentation', 'code']) {
+      await input.evaluate((node, change) => {
+        const paragraph = node.firstElementChild;
+        if (change === 'newline') paragraph.insertBefore(document.createElement('br'), paragraph.lastChild);
+        else paragraph.firstChild.textContent = change === 'indentation' ? ' const html = "<p>&</p>";' : 'changed code';
+      }, change);
+      await assert.rejects(confirmWindowlessInput(input, text), /text-mismatch/);
+      if (change === 'newline') await input.evaluate(node => node.firstElementChild.lastChild.previousSibling.remove());
+    }
+  } finally { await context.close(); }
+});
+
 for (const change of ['rewrite', 'overlay', 'late-rewrite']) test(`windowless input ${change} stops before any submission`, { timeout: 20000 }, async t => {
   const f = setup(t);
   const html = readFileSync(f.env.GIVILOOP_TEST_PAGE, 'utf8');

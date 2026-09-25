@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -11,7 +11,12 @@ import { parseArgs } from 'node:util';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
-const { values } = parseArgs({ options: { provider: { type: 'string' }, 'browser-profile': { type: 'string' } } });
+const { values } = parseArgs({ options: { provider: { type: 'string' }, 'browser-profile': { type: 'string' }, diagnostics: { type: 'boolean' } } });
+if (values.diagnostics) {
+  assert.ok(values['browser-profile'], 'Synthetic diagnostics require an explicit fresh browser profile');
+  assert.ok(!existsSync(values['browser-profile']) || readdirSync(values['browser-profile']).length === 0,
+    'Synthetic diagnostics must never inspect an existing browser profile');
+}
 const provider = values.provider ?? 'chatgpt-web';
 assert.ok(['chatgpt-web','gemini-web','deepseek-web','claude-web'].includes(provider));
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -105,7 +110,8 @@ const question='Rispondi in italiano, entro 700 parole. Controlla i comportament
 try {
   writeSources(false); writeFileSync(path.join(repo,files[2]),pagination);
   for (const args of [['init'],['add','.'],['-c','user.name=GiviLoop fixture','-c','user.email=fixture@example.invalid','commit','-m','Known-correct synthetic baseline']]) execFileSync('git',args,{cwd:repo,stdio:'ignore'});
-  await client.connect(new StdioClientTransport({command:process.execPath,args:['--import',pathToFileURL(path.join(root,'test/fixtures/live-diagnostics.mjs')).href,path.join(root,'dist/mcp-server.js')],env:{...process.env,GIVILOOP_ALLOWED_REPOSITORIES:repo,GIVILOOP_SYNTHETIC_DIAGNOSTICS:output},stderr:'pipe'}));
+  const diagnosticArgs = values.diagnostics ? ['--import',pathToFileURL(path.join(root,'test/fixtures/live-diagnostics.mjs')).href] : [];
+  await client.connect(new StdioClientTransport({command:process.execPath,args:[...diagnosticArgs,path.join(root,'dist/mcp-server.js')],env:{...process.env,GIVILOOP_ALLOWED_REPOSITORIES:repo,...(values.diagnostics ? {GIVILOOP_SYNTHETIC_DIAGNOSTICS:output} : {})},stderr:'pipe'}));
   for (const phase of ['buggy','fixed']) {
     writeSources(phase==='buggy');
     const checks=await independentChecks(phase), before=snapshot();
@@ -130,7 +136,7 @@ try {
     writeFileSync(path.join(output,'results.json'),JSON.stringify(results,null,2));
     console.log(JSON.stringify(result));
   }
-  assert.ok(readFileSync(path.join(output,'page-diagnostics.jsonl'),'utf8').includes('"event":"state"'), 'Live diagnostics must observe the actual review page');
+  if (values.diagnostics) assert.ok(readFileSync(path.join(output,'page-diagnostics.jsonl'),'utf8').includes('"event":"state"'), 'Live diagnostics must observe the actual review page');
 } catch(error) {
   writeFileSync(path.join(output,'failure.json'),JSON.stringify({error:String(error),completedPhases:results.length},null,2));
   // Keep delivery evidence before removing the fixture, including uncertain sends.

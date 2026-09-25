@@ -5,7 +5,20 @@ export async function confirmWindowlessInput(input: Locator, text: string): Prom
   const confirmed = await input.evaluate((node, expected) => {
     const actual = node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement
       ? node.value : node instanceof HTMLElement ? node.innerText : undefined;
-    return node.isConnected && actual?.replace(/\r\n?/g, "\n") === expected.replace(/\r\n?/g, "\n");
+    if (!node.isConnected) return false;
+    const wanted = expected.replace(/\r\n?/g, "\n");
+    if (actual?.replace(/\r\n?/g, "\n") === wanted) return true;
+    // ProseMirror adds a cursor-placeholder BR after a final line break. It
+    // contributes to innerText but not to the editor document. Read only the
+    // observed plain-text paragraph shape; never trim real code whitespace.
+    const paragraph = node.childNodes.length === 1 ? node.firstChild : null;
+    if (!(paragraph instanceof HTMLParagraphElement)) return false;
+    const children = [...paragraph.childNodes];
+    const trailing = children.at(-1);
+    if (!(trailing instanceof HTMLBRElement) || !trailing.classList.contains("ProseMirror-trailingBreak")) return false;
+    children.pop();
+    if (!children.every(child => child.nodeType === Node.TEXT_NODE || child instanceof HTMLBRElement)) return false;
+    return children.map(child => child instanceof HTMLBRElement ? "\n" : child.textContent).join("").replace(/\r\n?/g, "\n") === wanted;
   }, text);
   if (!confirmed) throw new BrowserRunError("BROWSER_INTERACTION_REQUIRED",
     "The windowless composer changed before submission (text-mismatch). No prompt was sent.");
@@ -35,11 +48,11 @@ export async function fillWindowlessInput(input: Locator, text: string): Promise
     // editor. Insert escaped text + explicit breaks so code whitespace survives.
     const html = value.replace(/\r\n?/g, "\n").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\n", "<br>");
     const inserted = document.execCommand(field ? "insertText" : "insertHTML", false, field ? value : html);
-    const actual = field ? node.value : node.innerText;
-    return !inserted ? "editing-rejected" : actual.replace(/\r\n?/g, "\n") === value.replace(/\r\n?/g, "\n") ? "confirmed" : "text-mismatch";
+    return inserted ? "inserted" : "editing-rejected";
   }, text);
-  if (filled !== "confirmed") throw new BrowserRunError("BROWSER_INTERACTION_REQUIRED",
+  if (filled !== "inserted") throw new BrowserRunError("BROWSER_INTERACTION_REQUIRED",
     `The windowless composer did not confirm the complete request (${filled}). Use givi resume --foreground. No prompt was sent.`);
+  await confirmWindowlessInput(input, text);
 }
 
 export async function activateWindowlessControl(control: Locator, enter: boolean, choice = false): Promise<void> {

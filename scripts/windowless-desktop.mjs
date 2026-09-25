@@ -104,7 +104,7 @@ if (values['foreground-control']) {
     assert.ok(report.control.maxOnscreenWindows > 0, 'Observer must detect the deliberately visible Chrome window');
     assert.ok(report.control.foregroundSamples > 0, 'Observer must detect the deliberately foreground Chrome window');
     await phase('background', liveProvider
-      ? ['scripts/web-acceptance.mjs', '--provider', liveProvider, '--browser-profile', path.join(temporary, 'live-profile')]
+      ? ['scripts/web-acceptance.mjs', '--provider', liveProvider, '--browser-profile', path.join(temporary, 'live-profile'), '--diagnostics']
       : ['--test', '--test-reporter=tap', '--test-concurrency=1',
         '--test-name-pattern=--background|windowless input|background pages|automatic MCP review uses windowless|saved defaults and MCP reuse', 'test/browser/roundtrip.test.mjs']);
     assert.equal(report.background.maxOnscreenWindows, 0, 'Background browser became visible');

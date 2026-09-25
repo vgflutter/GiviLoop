@@ -1,5 +1,6 @@
 // Loaded only by the public synthetic acceptance runner, never by the product.
-// No cookies, headers, request/response bodies, HTML or URL query strings.
+// No cookies, headers, network bodies, page HTML or URL query strings.
+// Editor text/markup belongs exclusively to our fresh synthetic test profile.
 import { appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { nativeChrome } from '../../dist/providers/native-chrome.js';
