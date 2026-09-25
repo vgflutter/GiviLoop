@@ -628,6 +628,7 @@ for (const change of ['rewrite', 'overlay']) test(`windowless input ${change} st
   const result = await cli(f, 'ask', ['--question', 'Original request', '--send', 'chatgpt-web', '--background', '--browser-profile', f.profile]);
   assert.equal(result.code, 1, result.stderr);
   assert.match(result.stderr, /BROWSER_INTERACTION_REQUIRED/);
+  assert.match(result.stderr, new RegExp(change === 'rewrite' ? 'text-mismatch' : 'covered'));
   assert.equal(f.events().filter(event => event.action === 'submit').length, 0);
   const status = JSON.parse(readFileSync(path.join(f.latest().dir, 'browser-status.json')));
   assert.equal(status.submitted, false);

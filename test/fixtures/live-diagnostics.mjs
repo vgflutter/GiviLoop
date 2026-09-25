@@ -11,7 +11,7 @@ if (output) {
   nativeChrome.launch = async (...args) => {
     const context = await launch(...args);
     let number = 0;
-    context.on('page', page => {
+    const observe = page => {
       const id = ++number;
       page.on('response', response => {
         const url = new URL(response.url());
@@ -48,7 +48,9 @@ if (output) {
       page.once('close', () => clearInterval(timer));
       const close = context.close.bind(context);
       context.close = async (...closeArgs) => { clearInterval(timer); await sample(); return close(...closeArgs); };
-    });
+    };
+    context.pages().forEach(observe);
+    context.on('page', observe);
     return context;
   };
 }

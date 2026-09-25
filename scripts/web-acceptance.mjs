@@ -130,6 +130,7 @@ try {
     writeFileSync(path.join(output,'results.json'),JSON.stringify(results,null,2));
     console.log(JSON.stringify(result));
   }
+  assert.ok(readFileSync(path.join(output,'page-diagnostics.jsonl'),'utf8').includes('"event":"state"'), 'Live diagnostics must observe the actual review page');
 } catch(error) {
   writeFileSync(path.join(output,'failure.json'),JSON.stringify({error:String(error),completedPhases:results.length},null,2));
   // Keep delivery evidence before removing the fixture, including uncertain sends.
