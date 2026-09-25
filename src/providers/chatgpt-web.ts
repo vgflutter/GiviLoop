@@ -14,7 +14,7 @@ import { runControl } from "../run-control.js";
 import { assertResumable } from "../resume-guard.js";
 import { browserSessions } from "./browser-sessions.js";
 import { nativeChrome } from "./native-chrome.js";
-import { activateWindowlessControl, fillWindowlessInput } from "./windowless-input.js";
+import { activateWindowlessControl, confirmWindowlessInput, fillWindowlessInput } from "./windowless-input.js";
 
 export type ChatGptWebMode = "prefill" | "submit" | "auto";
 export type ChatGptModelSelection = "prefer" | "require";
@@ -188,6 +188,9 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
       if (background) await minimizeBrowser(context, page);
     }
     record("waiting-for-input");
+    // The server-rendered textarea can be replaced by the client editor while
+    // scripts/styles are still loading, changing text after a successful fill.
+    if (nativeChrome.isWindowless(context)) await page.waitForLoadState("load", { timeout: 15_000 });
     const beforeCookieChoice = async () => {
       if (background) {
         throw new BrowserRunError("BROWSER_SETUP_REQUIRED", "The website needs its initial cookie choice. Run givi open, finish setup and close Chrome, then givi resume. No prompt was sent.");
@@ -234,6 +237,7 @@ export async function sendToWebChat(options: ChatGptWebOptions): Promise<ChatGpt
         node instanceof HTMLInputElement && ["button", "submit"].includes(node.type))) {
       throw new BrowserRunError("BROWSER_INTERACTION_REQUIRED", "The send control needs an explicitly visible session. Use givi resume --foreground. No prompt was sent.");
     }
+    if (windowless) await confirmWindowlessInput(chatInput(page, provider), requestText);
     // A click can have reached the server even if Playwright loses the page.
     // Never retry a click or navigation after this point.
     status.submitted = "unknown";
@@ -612,9 +616,9 @@ async function waitForFinalAssistantResponse(
   let lastChangedAt = Date.now();
 
   while (Date.now() - startedAt < options.maxWaitMs) {
-    assertChatOrigin(page, options.providerUrl);
     const blocker = await pageBlocker(page);
     if (blocker) throw blocker;
+    assertChatOrigin(page, options.providerUrl);
     const messages = await assistantMessages(page);
     const count = await messages.count();
 

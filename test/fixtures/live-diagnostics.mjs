@@ -32,6 +32,9 @@ if (output) {
         try {
           const state = await page.evaluate(() => ({
             ready: document.readyState, visibility: document.visibilityState,
+            controls: [...document.querySelectorAll('button[data-testid],button[aria-label]')].map(node => ({
+              testId: node.getAttribute('data-testid'), label: node.getAttribute('aria-label'), disabled: node.disabled,
+            })),
             // Only a fresh anonymous profile and public test text reach this hook.
             text: document.body?.innerText?.slice(0, 30000),
             editors: [...document.querySelectorAll('textarea,[contenteditable="true"]')].map(node => {

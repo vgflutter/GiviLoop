@@ -619,16 +619,18 @@ test("a login wall without an editable composer is reported without submitting",
   assert.equal(existsSync(path.join(f.repo, ".giviloop/latest-run-id")), false);
 });
 
-for (const change of ['rewrite', 'overlay']) test(`windowless input ${change} stops before any submission`, { timeout: 20000 }, async t => {
+for (const change of ['rewrite', 'overlay', 'late-rewrite']) test(`windowless input ${change} stops before any submission`, { timeout: 20000 }, async t => {
   const f = setup(t);
   const html = readFileSync(f.env.GIVILOOP_TEST_PAGE, 'utf8');
   writeFileSync(f.env.GIVILOOP_TEST_PAGE, html.replace('</body>', change === 'rewrite'
     ? '<script>document.querySelector("#input").addEventListener("input", e => { e.target.value="changed request"; });</script></body>'
+    : change === 'late-rewrite'
+    ? '<script>const send=document.querySelector("[data-testid=composer-submit-button]"); send.disabled=true; document.querySelector("#input").addEventListener("input", e => { setTimeout(()=>{e.target.value="changed after fill";send.disabled=false;},300); });</script></body>'
     : '<div style="position:fixed;inset:0;z-index:1000;background:white">Blocking overlay</div></body>'));
   const result = await cli(f, 'ask', ['--question', 'Original request', '--send', 'chatgpt-web', '--background', '--browser-profile', f.profile]);
   assert.equal(result.code, 1, result.stderr);
   assert.match(result.stderr, /BROWSER_INTERACTION_REQUIRED/);
-  assert.match(result.stderr, new RegExp(change === 'rewrite' ? 'text-mismatch' : 'covered'));
+  assert.match(result.stderr, new RegExp(change === 'overlay' ? 'covered' : 'text-mismatch'));
   assert.equal(f.events().filter(event => event.action === 'submit').length, 0);
   const status = JSON.parse(readFileSync(path.join(f.latest().dir, 'browser-status.json')));
   assert.equal(status.submitted, false);

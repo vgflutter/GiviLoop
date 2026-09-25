@@ -1,6 +1,16 @@
 import type { Locator } from "playwright";
 import { BrowserRunError } from "./browser-runtime.js";
 
+export async function confirmWindowlessInput(input: Locator, text: string): Promise<void> {
+  const confirmed = await input.evaluate((node, expected) => {
+    const actual = node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement
+      ? node.value : node instanceof HTMLElement ? node.innerText : undefined;
+    return node.isConnected && actual?.replace(/\r\n?/g, "\n") === expected.replace(/\r\n?/g, "\n");
+  }, text);
+  if (!confirmed) throw new BrowserRunError("BROWSER_INTERACTION_REQUIRED",
+    "The windowless composer changed before submission (text-mismatch). No prompt was sent.");
+}
+
 // Hidden Chrome targets on Windows/Linux can acknowledge CDP keyboard events
 // without delivering them after a renderer change. Use the page's editing
 // command and DOM activation instead. Never alter event trust or page scripts.
