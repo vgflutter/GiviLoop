@@ -13,6 +13,12 @@ if (output) {
     let number = 0;
     const observe = page => {
       const id = ++number;
+      page.on('framenavigated', frame => {
+        if (frame === page.mainFrame()) {
+          const url = new URL(frame.url());
+          write({ id, event: 'navigation', origin: url.origin, path: url.pathname.replace(/[a-f0-9-]{24,}/gi, ':id') });
+        }
+      });
       page.on('response', response => {
         const url = new URL(response.url());
         if (url.hostname === 'chatgpt.com' && (response.status() >= 400 || /conversation|sentinel/.test(url.pathname))) {
@@ -27,7 +33,7 @@ if (output) {
           const state = await page.evaluate(() => ({
             ready: document.readyState, visibility: document.visibilityState,
             // Only a fresh anonymous profile and public test text reach this hook.
-            text: document.body.innerText.slice(0, 30000),
+            text: document.body?.innerText?.slice(0, 30000),
             editors: [...document.querySelectorAll('textarea,[contenteditable="true"]')].map(node => {
               const box = node.getBoundingClientRect();
               const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
@@ -36,11 +42,11 @@ if (output) {
             }),
             messages: [...document.querySelectorAll('[data-message-role],[data-message-author-role]')].map(node => ({
               role: node.getAttribute('data-message-role') ?? node.getAttribute('data-message-author-role'),
-              complete: node.getAttribute('data-message-complete'), length: node.innerText.length,
+              complete: node.getAttribute('data-message-complete'), length: node.innerText?.length,
             })),
           }));
           write({ id, event: 'state', ...state });
-        } catch { /* Navigation or cleanup can destroy the execution context. */ }
+        } catch (error) { write({ id, event: 'snapshot-error', error: String(error).slice(0, 400) }); }
         finally { busy = false; }
       };
       const timer = setInterval(() => void sample(), 2000);
