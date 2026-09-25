@@ -1,5 +1,5 @@
 // Loaded only by the public synthetic acceptance runner, never by the product.
-// No cookies, headers, network bodies, page HTML or URL query strings.
+// No cookies, headers, raw network bodies, page HTML or URL query strings.
 // Editor text/markup belongs exclusively to our fresh synthetic test profile.
 import { appendFileSync } from 'node:fs';
 import path from 'node:path';
@@ -20,10 +20,36 @@ if (output) {
           write({ id, event: 'navigation', origin: url.origin, path: url.pathname.replace(/[a-f0-9-]{24,}/gi, ':id') });
         }
       });
-      page.on('response', response => {
+      page.on('requestfailed', request => {
+        const url = new URL(request.url());
+        if (url.hostname === 'chatgpt.com') write({ id, event: 'request-failed',
+          path: url.pathname.replace(/[a-f0-9-]{24,}/gi, ':id'), reason: request.failure()?.errorText });
+      });
+      page.on('response', async response => {
         const url = new URL(response.url());
         if (url.hostname === 'chatgpt.com' && (response.status() >= 400 || /conversation|sentinel/.test(url.pathname))) {
           write({ id, event: 'http', path: url.pathname.replace(/[a-f0-9-]{24,}/gi, ':id'), status: response.status() });
+        }
+        if (url.hostname === 'chatgpt.com' && /^\/(backend-anon\/f|unauth-mweb)\/conversation$/.test(url.pathname)) {
+          try {
+            const body = await response.text();
+            const fields = new Set(), flags = new Set(); let assistantCharacters = 0, records = 0;
+            const inspect = (value, depth = 0) => {
+              if (!value || typeof value !== 'object' || depth > 12) return;
+              if (value.author?.role === 'assistant') assistantCharacters += (value.content?.parts ?? []).filter(part => typeof part === 'string').join('').length;
+              for (const [key, item] of Object.entries(value)) {
+                if (/^[a-z_]{1,50}$/.test(key)) fields.add(key);
+                if (['type','code','error_code','finish_reason','status','end_turn'].includes(key) &&
+                    (typeof item === 'boolean' || typeof item === 'string' && /^[a-z_ -]{1,70}$/i.test(item))) flags.add(`${key}:${item}`);
+                inspect(item, depth + 1);
+              }
+            };
+            for (const line of body.split('\n')) {
+              if (!line.startsWith('data:')) continue;
+              try { inspect(JSON.parse(line.slice(5))); records++; } catch { /* SSE terminator. */ }
+            }
+            write({ id, event: 'stream-summary', records, fields: [...fields], flags: [...flags], assistantCharacters });
+          } catch { write({ id, event: 'stream-unavailable' }); }
         }
       });
       let pending;
