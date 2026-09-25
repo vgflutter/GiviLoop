@@ -88,6 +88,29 @@ test('setup discovers local models without inference, then sends only its opt-in
   assert.deepEqual(f.osCalls(), []);
 });
 
+test('opinion sends selected context with saved defaults; answer prints it without another request', async t => {
+  const f = fixture(t), server = await localServer(t, 'ollama');
+  writeFileSync(path.join(f.repo, 'proposal.md'), 'PUBLIC_PROPOSAL_FOR_REVIEW');
+  writeFileSync(path.join(f.repo, 'unselected.md'), 'DO_NOT_INCLUDE_THIS_FILE');
+  const configured = await cli(f, 'setup', ['--provider', 'ollama', '--model', modelFor('ollama'), '--base-url', server.url, '--non-interactive']);
+  assert.equal(configured.code, 0, configured.stderr);
+  const result = await cli(f, 'opinion', ['Quali alternative vedi?', '-f', 'proposal.md']);
+  assert.equal(result.code, 0, result.stderr);
+  const run = f.latest();
+  const sent = server.calls.filter(c => c.path === '/api/chat');
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].body.messages[0].content, /Quali alternative vedi\?/);
+  assert.match(sent[0].body.messages[0].content, /PUBLIC_PROPOSAL_FOR_REVIEW/);
+  assert.doesNotMatch(sent[0].body.messages[0].content, /DO_NOT_INCLUDE_THIS_FILE/);
+  assert.equal((await cli(f, 'answer', [])).stdout, answer + '\n');
+  const prepared = await cli(f, 'ask', ['--question', 'Prepare only']);
+  assert.equal(prepared.code, 0, prepared.stderr);
+  assert.notEqual((await cli(f, 'answer', [])).code, 0);
+  assert.equal((await cli(f, 'answer', ['--run-id', run.id])).stdout, answer + '\n');
+  assert.equal(server.calls.filter(c => c.path === '/api/chat').length, 1);
+  assert.deepEqual(f.osCalls(), []);
+});
+
 for (const provider of ["ollama", "dwarfstar", "llama-cpp", "lmstudio", "mlx"]) {
   test(`${provider}: CLI local ask -> saved final answer/usage -> MCP read, no browser or clipboard`, async t => {
     const f = fixture(t), server = await localServer(t, provider);

@@ -12,7 +12,7 @@ function option(args: string[], name: string) {
 /** Saved choices never cause ask/prepare/archive to submit implicitly. */
 export function configuredCliArgs(original: string[]): string[] {
   const args = [...original], command = args[0];
-  if (!["review", "ask", "prepare", "archive", "send", "browser", "doctor", "models"].includes(command)) return args;
+  if (!["review", "opinion", "ask", "prepare", "archive", "send", "browser", "doctor", "models"].includes(command)) return args;
   const repository = path.resolve(option(args, "--repo") ?? option(args, "--repositoryPath") ?? process.cwd());
   // Compound review invokes prepare then send; both must resolve the same root.
   for (const key of ["--repo", "--repositoryPath"]) {
@@ -23,7 +23,7 @@ export function configuredCliArgs(original: string[]): string[] {
   }
   const p = readPreferences(repository);
   const set = (key: string, value?: string) => { if (value && option(args, key) === undefined) args.push(key, value); };
-  if (command === "review" || command === "send") {
+  if (command === "review" || command === "opinion" || command === "send") {
     const destination = option(args, "--send") ?? p?.provider ?? "chatgpt-web";
     if (destination === "manual") throw new Error("Manual provider selected. Use givi prepare, copy and ingest; choose --send NAME for automatic review.");
     set("--send", destination);

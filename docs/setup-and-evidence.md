@@ -34,10 +34,12 @@ Add `.giviloop/` to the project's `.gitignore`. Setup reports and review records
 givi setup --provider claude-web --non-interactive --background
 givi review --goal "Find a concrete bug and regression tests"  # current Git changes
 givi review --file src/example.ts --question "Check this contract"  # selected file
+givi opinion "Which alternative is simpler, and why?" -f proposal.md
+givi answer                          # latest completed response, in the terminal
 givi status
 ```
 
-`review` explicitly prepares **and sends**. Without saved preferences it uses ChatGPT. `ask`, `prepare` and `archive` still only prepare unless `--send` is present. `send` uses the saved provider; a prepared destination mismatch fails before sending. Manual preference requires `prepare` / `copy` / `ingest`. `setup --foreground` saves visible mode; `setup --background` restores quiet mode. Local reviews use the saved runtime/model without a browser.
+`review` and `opinion` explicitly prepare **and send**. Without saved preferences they use ChatGPT. `opinion` includes only its question and selected files. `ask`, `prepare` and `archive` still only prepare unless `--send` is present. `send` uses the saved provider; a prepared destination mismatch fails before sending. Manual preference requires `prepare` / `copy` / `ingest`. `setup --foreground` saves visible mode; `setup --background` restores quiet mode. Local reviews use the saved runtime/model without a browser. `answer` prints a completed response locally; it refuses an old response left behind by a failed attempt. Use `answer --run-id ID` for an older run.
 
 Auto web reviews default to ordinary Chrome with a hidden review page. The bundled offscreen extension is loaded automatically into the dedicated profile. Login, verification, cookie choices and uploads pause as `needs-attention` **before submission**. The provider controls whether verification recurs. Quiet checks/reviews do not wait for human verification even if a longer verification timeout is supplied. Windowless startup failure stops without a visible fallback. [Tested environments and requirements](windowless-browser.md).
 

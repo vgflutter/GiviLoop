@@ -57,6 +57,14 @@ export function cancelRun(repository: string, id?: string) {
   atomicJson(run.file("review-control.json"), { action: "cancel", token: run.current.status.controlToken, at: new Date().toISOString() });
   return { runId: run.id, cancellationRequested: true, nextStep: "Check givi status for the final result. Cancellation does not retract an already submitted prompt." };
 }
+export function readRunAnswer(repository: string, id?: string): string {
+  const report = runStatus(repository, id);
+  if (!report.responsePath || !["completed", "response-saved"].includes(report.state) ||
+      report.locked || report.requestChanged) {
+    throw new Error(`No completed answer available for this run (${report.state}). Use givi status to inspect it.`);
+  }
+  return readFileSync(report.responsePath, "utf8");
+}
 export async function openRun(repository: string, id?: string) {
   const run = resolveRun(repository, id);
   if (!run?.current || !isWebProvider(run.current.status.provider)) throw new Error("No browser review selected. Use givi browser login --provider NAME.");

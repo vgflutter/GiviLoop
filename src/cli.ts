@@ -21,7 +21,8 @@ import { pruneCompletedRuns, RUN_ID_PATTERN } from "./run-storage.js";
 import { VERSION } from "./version.js";
 import { setupCommand, findingsCommand, recheckCommand, demoCommand, reportCommand, autoReviewCommand } from "./workflow-commands.js";
 import { configuredCliArgs } from "./cli-preferences.js";
-import { runStatus, cancelRun, openRun, resumeRun } from "./run-status.js";
+import { opinionArgs } from "./cli-shortcuts.js";
+import { runStatus, cancelRun, openRun, resumeRun, readRunAnswer } from "./run-status.js";
 import { probeLocalProvider, readLocalProvider, readLocalReasoning, sendLocalReview } from "./providers/local-review.js";
 import {
   sendToWebChat,
@@ -103,6 +104,7 @@ type SourceArchiveManifest = {
 type Command =
   | "demo" | "report" | "auto-review"
   | "review" | "status" | "open" | "resume" | "cancel"
+  | "opinion" | "answer"
   | "setup" | "findings" | "recheck"
   | "prepare"
   | "ask"
@@ -120,10 +122,18 @@ async function main(): Promise<void> {
   const command = (args[0] ?? "help") as Command;
 
   try {
-    if (args.includes("--help") || args.includes("-h")) { printHelp(); return; }
+    if (args.includes("--help") || args.includes("-h")) { printHelp(args.includes("--all")); return; }
     if (args[0] === "--version") { console.log(VERSION); return; }
+    if (command === "opinion") args = [command, ...opinionArgs(args.slice(1))];
     args = configuredCliArgs(args);
     switch (command) {
+      case "opinion": await ask(args.slice(1)); break;
+      case "answer": {
+        useRepository(args);
+        const answer = readRunAnswer(process.cwd(), readOption(args, "--run-id"));
+        process.stdout.write(answer.endsWith("\n") ? answer : answer + "\n");
+        break;
+      }
       case "review": {
         const options = args.slice(1);
         if (readOption(options, "--run-id")) throw new Error("review creates a new run. Use send or resume to select an existing --run-id.");
@@ -205,7 +215,7 @@ async function main(): Promise<void> {
         break;
       }
       case "help":
-        printHelp();
+        printHelp(args.includes("--all"));
         break;
       default:
         throw new Error(`Unknown command: ${command}. Run givi help for available commands.`);
@@ -1970,7 +1980,36 @@ function commandExists(command: string): boolean {
   }
 }
 
-function printHelp(): void {
+function printHelp(detailed = false): void {
+  if (!detailed) {
+    console.log(`GiviLoop ${VERSION}
+
+Run in your project. Choose a reviewer once:
+  givi setup
+
+Everyday commands:
+  givi review                      Review and send current Git changes.
+  givi review -f src/example.ts     Review and send one selected file.
+  givi opinion "Your question"      Ask and send a second opinion.
+  givi opinion "Compare options" -f proposal.md
+  givi answer                      Print the latest completed answer.
+  givi status                      Show progress or the next action.
+
+Use the saved provider/profile; ChatGPT is the default if unconfigured.
+Web reviews use background mode by default. --background overrides a saved
+foreground choice; Chrome's Dock icon may appear, but no review window opens.
+An opinion includes only your question and explicitly selected files.
+
+If login/setup is needed: givi open, finish setup and close Chrome, then givi resume.
+givi cancel requests cancellation; it cannot retract an already sent prompt.
+
+givi ask --question "..." prepares without sending unless --send is specified.
+givi demo --offline shows a local example without contacting a provider.
+Use --repo PATH for another project; answer/status also accept --run-id ID.
+givi help --all                   All commands and advanced options.
+`);
+    return;
+  }
   console.log(`
 GiviLoop ${VERSION}
 
@@ -2014,6 +2053,9 @@ Commands:
             Saves project defaults. --background (default) or --foreground.
   review    Prepare and send using saved preferences (ChatGPT if unconfigured).
             Git changes by default; --file/--question for selected context.
+  opinion   "QUESTION" [-f PATH ...]: send a second opinion with saved preferences.
+            Includes only the question and selected files. Also accepts --question/-q.
+  answer    Print the latest completed answer; --run-id selects an older run.
   status    Show the latest run and next action, without opening Chrome. --json for tools.
   open      Explicitly open the selected web run's profile for login/setup; sends nothing.
   resume    Continue only a needs-attention run proven unsent and unchanged.
@@ -2041,7 +2083,7 @@ Commands:
 Important options:
   --repo PATH               Repository to review or store the GiviLoop run in.
   --run-id ID               Select a saved run for copy, ingest or send. Defaults to the latest run.
-  --question TEXT           Advisory question for givi ask.
+  --question TEXT           Advisory question for givi ask or givi opinion.
   --goal TEXT               Goal/context for givi prepare.
   --file PATH               Attach a repository-local file to givi ask. Can be repeated.
   --open                    With givi copy, open the target chat in your regular browser for manual use.

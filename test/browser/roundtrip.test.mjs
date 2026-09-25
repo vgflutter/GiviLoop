@@ -448,6 +448,28 @@ test('CLI review uses saved preferences and resolves a relative repository once'
   assert.match(f.events().find(e => e.action === 'submit').prompt, /changed/);
 });
 
+test('opinion uses saved windowless defaults and answer reads the result without another launch', { timeout: 30000 }, async t => {
+  const f = setup(t);
+  writeFileSync(path.join(f.repo, 'proposal.md'), 'PUBLIC_SELECTED_PROPOSAL');
+  writeFileSync(path.join(f.repo, 'unselected.md'), 'UNSELECTED_CONTEXT');
+  const configured = await cli(f, 'setup', ['--provider', 'chatgpt-web', '--browser-profile', f.profile, '--non-interactive']);
+  assert.equal(configured.code, 0, configured.stderr);
+  const sent = await cli(f, 'opinion', ['Quali alternative vedi?', '-f', 'proposal.md', '--response-stable-ms', '100', '--max-wait-ms', String(successfulResponseMs)]);
+  assert.equal(sent.code, 0, sent.stderr);
+  const status = JSON.parse(readFileSync(path.join(f.latest().dir, 'browser-status.json')));
+  assert.equal(status.visibility, 'windowless');
+  assert.equal(status.profile, f.profile);
+  const submissions = f.events().filter(e => e.action === 'submit');
+  assert.equal(submissions.length, 1);
+  assert.match(submissions[0].prompt, /PUBLIC_SELECTED_PROPOSAL/);
+  assert.doesNotMatch(submissions[0].prompt, /UNSELECTED_CONTEXT/);
+  const launches = f.events().filter(e => e.action === 'launch').length;
+  const result = await cli(f, 'answer');
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stdout, answer + '\n');
+  assert.equal(f.events().filter(e => e.action === 'launch').length, launches);
+});
+
 test('saved defaults and MCP reuse keep two reviews isolated in one owned Chrome', { timeout: 30000 }, async t => {
   const f = otherFixture(t, webCases[1]);
   const configured = await cli(f, 'setup', ['--non-interactive', '--provider', 'claude-web', '--browser-profile', f.profile]);

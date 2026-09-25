@@ -4,6 +4,35 @@
 
 Detailed CLI/MCP examples, browser options, provider behavior and data handling. For the shortest path to a first review, start with the README.
 
+## Everyday commands (current source checkout)
+
+Configure your reviewer once in the project, then reuse it:
+
+```sh
+npm run givi -- setup --provider chatgpt-web --non-interactive
+npm run givi -- review
+npm run givi -- opinion "What alternatives and tradeoffs do you see?" -f proposal.md
+npm run givi -- answer
+```
+
+`review` sends current Git changes; `review -f path` sends selected code instead.
+`opinion "question"` sends only the question and optional repeated `-f` files.
+Both use saved provider/model/profile settings and default to background web
+delivery. `--send NAME` overrides the provider for one request. Manual-provider
+preferences require the existing prepare/copy/ingest workflow or an explicit
+provider override. No code changes are applied by these commands.
+
+`answer` prints the latest completed response without opening Chrome or sending
+again. Use `answer --run-id ID` for an older run. Missing, failed, active or changed
+requests are refused, even if an old response file remains; `status` explains the
+current state. A manually ingested answer is readable too.
+
+`opinion` also accepts `--question`/`-q`; pass exactly one question and quote it.
+It preserves `ask`'s prepare-only behavior: `ask --question "..."` does not send
+unless `--send` is explicit. `help` shows the short command list; `help --all`
+shows the complete reference. After building, `npm link` exposes the current
+checkout as `givi` to avoid the `npm run givi --` prefix.
+
 ## Installation and requirements
 
 From a checkout, run `npm ci` and `npm run build`. Examples below use `npm run givi --`; after a global installation, use `givi` instead.

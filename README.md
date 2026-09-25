@@ -66,9 +66,29 @@ Manual `copy --open` / `ingest` works with all four prompt formats. [Local model
 
 ## Stay in your editor
 
-After setup, `givi review` reviews your Git changes with the saved provider. `givi ask` and `givi prepare` still only prepare context unless you explicitly request sending.
+In the current source checkout, everyday use is:
+
+```sh
+givi setup                                # choose a reviewer once per project
+givi review                               # review current Git changes
+givi opinion "Which approach would you choose?" -f proposal.md
+givi answer                               # read the latest completed answer
+```
+
+`review` and `opinion` send using your saved provider/profile. `opinion` includes
+only the question and files you explicitly select; it does not attach Git changes
+automatically. Use `-f` repeatedly for more files, or omit it for a question alone.
+Background mode is the default; Chrome's Dock icon can appear without a visible
+review window. These commands do not apply code changes.
+
+From a checkout, replace `givi` with `npm run givi --`. To expose this checkout as
+`givi`, run `npm link` once after building. Run commands in the project being
+reviewed, or use `--repo PATH`; configuration is saved separately for each project.
+`givi help` shows everyday commands; `givi help --all` lists advanced options.
+`givi ask` and `givi prepare` still only prepare context unless sending is explicit.
 
 - `givi status` — see progress, the saved answer and the next action.
+- `givi answer --run-id ID` — read an older completed answer without sending again.
 - `givi open` / `givi resume` — handle a paused login/setup when convenient, then continue. Resume refuses requests already sent or of uncertain status.
 - `givi cancel` — stop waiting; this cannot retract a prompt already sent.
 
