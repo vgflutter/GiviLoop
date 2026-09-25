@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -85,6 +85,11 @@ jobs:
         run: |
           npm run test:package -- --browser
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/windowless-desktop.mjs
+      - name: Test the installed package on macOS
+        if: runner.os == 'macOS'
+        run: |
+          npm run test:package -- --browser
           node scripts/windowless-desktop.mjs
       - name: Keep the checked package and verification evidence
         if: always()
