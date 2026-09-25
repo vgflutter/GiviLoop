@@ -18,9 +18,9 @@ export function opinionArgs(args: string[]): string[] {
   }
   const question = parsed.positionals[0] ?? questions![0];
   if (!question.trim()) throw new Error("The opinion question must not be empty.");
-  // Keep option order/overrides and remove only the actual positional token.
-  const positional = parsed.tokens.find(token => token.kind === "positional");
-  const terminator = parsed.tokens.find(token => token.kind === "option-terminator");
-  const normalized = args.filter((_, index) => index !== positional?.index && index !== terminator?.index);
-  return positional ? [...normalized, `--question=${question}`] : normalized;
+  // Canonicalize short/inline forms too: -fpath must attach the same file as
+  // -f path, rather than being accepted here and ignored by the shared CLI.
+  const normalized = parsed.tokens.flatMap(token => token.kind === "option"
+    ? [token.value === undefined ? `--${token.name}` : `--${token.name}=${token.value}`] : []);
+  return parsed.positionals.length ? [...normalized, `--question=${question}`] : normalized;
 }

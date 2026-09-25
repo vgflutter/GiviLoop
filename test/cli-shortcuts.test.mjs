@@ -10,9 +10,9 @@ const { configuredCliArgs } = await import(pathToFileURL(path.join(distDir, 'cli
 const { savePreferences } = await import(pathToFileURL(path.join(distDir, 'preferences.js')));
 
 test('opinion accepts one quoted question and rejects ambiguous input before creating a run', t => {
-  assert.deepEqual(opinionArgs(['Qual è il rischio?', '-f', 'a b.ts', '-f', 'c.ts']), ['-f', 'a b.ts', '-f', 'c.ts', '--question=Qual è il rischio?']);
+  assert.deepEqual(opinionArgs(['Qual è il rischio?', '-f', 'a b.ts', '-fc.ts']), ['--file=a b.ts', '--file=c.ts', '--question=Qual è il rischio?']);
   assert.deepEqual(opinionArgs(['--', '--send']), ['--question=--send']);
-  assert.deepEqual(opinionArgs(['-q', 'Second opinion']), ['-q', 'Second opinion']);
+  assert.deepEqual(opinionArgs(['-q', 'Second opinion']), ['--question=Second opinion']);
   const f = fixture(t);
   for (const args of [[], [''], ['two', 'questions'], ['first', '-q', 'second'], ['-q', 'first', '--question', 'second'], ['Question', '--bakground'], ['Question', '--file']]) {
     const result = f.cli('opinion', args);

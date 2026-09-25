@@ -94,7 +94,7 @@ test('opinion sends selected context with saved defaults; answer prints it witho
   writeFileSync(path.join(f.repo, 'unselected.md'), 'DO_NOT_INCLUDE_THIS_FILE');
   const configured = await cli(f, 'setup', ['--provider', 'ollama', '--model', modelFor('ollama'), '--base-url', server.url, '--non-interactive']);
   assert.equal(configured.code, 0, configured.stderr);
-  const result = await cli(f, 'opinion', ['Quali alternative vedi?', '-f', 'proposal.md']);
+  const result = await cli(f, 'opinion', ['Quali alternative vedi?', '-fproposal.md']);
   assert.equal(result.code, 0, result.stderr);
   const run = f.latest();
   const sent = server.calls.filter(c => c.path === '/api/chat');
