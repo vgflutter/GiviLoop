@@ -138,6 +138,7 @@ try {
     const runId=readFileSync(path.join(repo,'.giviloop/latest-run-id'),'utf8').trim();
     const status=readFileSync(path.join(repo,'.giviloop/runs',runId,'browser-status.json'),'utf8');
     writeFileSync(path.join(output,'failure-browser-status.json'),status);
+    writeFileSync(path.join(output,'failure-request.md'),readFileSync(path.join(repo,'.giviloop/runs',runId,'external-review-request.md')));
   } catch { /* Failure can precede run/status creation. */ }
   throw error;
 } finally { await client.close();rmSync(repo,{recursive:true,force:true});console.log('Evidence: '+output); }

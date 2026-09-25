@@ -2,6 +2,14 @@ name: Windowless desktop
 on:
   workflow_dispatch:
     inputs:
+      runner:
+        description: 'Native system to validate'
+        type: choice
+        default: both
+        options:
+          - both
+          - ubuntu-latest
+          - windows-latest
       live-provider:
         description: 'Opt-in: send two public synthetic reviews to the selected real website'
         type: choice
@@ -19,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: ${{ inputs.runner == 'both' && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON(format('["{0}"]', inputs.runner)) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 12
     env:

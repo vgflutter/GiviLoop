@@ -41,6 +41,7 @@ if (output) {
               const box = node.getBoundingClientRect();
               const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
               return { tag: node.tagName, id: node.id, length: (node.value ?? node.innerText).length,
+                text: node.value ?? node.innerText, markup: node.isContentEditable ? node.innerHTML : undefined,
                 hit: hit?.tagName, covered: !hit || !node.contains(hit), width: box.width, height: box.height };
             }),
             messages: [...document.querySelectorAll('[data-message-role],[data-message-author-role]')].map(node => ({
