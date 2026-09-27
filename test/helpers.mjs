@@ -13,7 +13,9 @@ export function fixture(t, { git = false } = {}) {
   const root = mkdtempSync(path.join(os.tmpdir(), "giviloop-flow-"));
   const repo = path.join(root, "repo with spaces è");
   mkdirSync(repo);
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  // Windows can retain a profile file briefly after its owning process exits.
+  // Retry only deletion of this test's temporary directory, never a user profile.
+  t.after(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const clipboard = path.join(root, "clipboard.txt");
   const calls = path.join(root, "os-calls.jsonl");
   writeFileSync(clipboard, "");
