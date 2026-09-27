@@ -5,6 +5,7 @@ import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdir
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { browserTestEnvironment } from "./test-visibility.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const npm = process.env.npm_execpath;
@@ -13,6 +14,7 @@ if (!npm) throw new Error("Run this check with npm run test:package.");
 // Keep individual test deadlines and assertions unchanged.
 const foreground = process.argv.includes("--foreground");
 if (foreground && !process.argv.includes("--browser")) throw new Error("--foreground requires --browser");
+const testEnvironment = browserTestEnvironment(foreground);
 const slowVm = process.argv.includes("--slow-vm");
 const testBudgetScale = slowVm ? 2 : 1;
 const temporary = mkdtempSync(path.join(os.tmpdir(), "giviloop-package-"));
@@ -58,7 +60,7 @@ try {
   assert.ok(run(cli, [...prefix, "help"], { cwd: consumer }).includes("givi help --all"));
   assert.match(run(process.execPath, [path.join(installed, "examples/double-check/verify.mjs")], { cwd: consumer }), /4 regression cases passed/);
   const tests = readdirSync(path.join(root, "test")).filter(name => name.endsWith(".test.mjs")).map(name => path.join("test", name));
-  const env = { ...process.env, GIVILOOP_TEST_DIST_DIR: dist, ...(foreground ? { GIVILOOP_TEST_FOREGROUND: "1" } : {}) };
+  const env = { ...testEnvironment, GIVILOOP_TEST_DIST_DIR: dist };
   const unitOutput = run(process.execPath, ["--test", "--test-reporter=tap", ...tests], { env, timeout: 240000 * testBudgetScale, evidence: "package-unit-tests.tap" });
   const browser = process.argv.includes("--browser");
   const browserOutput = browser ? run(process.execPath, ["--test", "--test-reporter=tap", "--test-concurrency=1", "test/browser/roundtrip.test.mjs"], { env, timeout: 600000 * testBudgetScale, evidence: "package-browser-tests.tap" }) : "";

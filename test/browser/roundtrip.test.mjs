@@ -9,8 +9,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { cliPath, distDir, fixture, repoRoot } from "../helpers.mjs";
 
-// These manual recovery tests intentionally show Chrome. Opt in explicitly.
-const foregroundTests = process.env.GIVILOOP_TEST_FOREGROUND === "1";
+// Manual recovery intentionally shows Chrome; run it only on a CI desktop.
+const foregroundTests = process.env.CI === "true" && process.env.GIVILOOP_TEST_FOREGROUND === "1";
 const preload = new URL("../fixtures/browser-site.mjs", import.meta.url).href;
 const answer = "Review verificata: più contesto è utile.\nSeconda riga.";
 

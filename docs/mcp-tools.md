@@ -120,7 +120,8 @@ skill validator passed. The additional six-operation HOL CLI contract regression
 also passed. The browser run included the 10 cases that deliberately show Chrome
 for manual recovery; CI explicitly includes them too. Use
 `npm run test:browser -- --foreground` to include manual recovery and visible
-window lifecycle cases.
+window lifecycle cases on CI desktops only (`CI=true`). Local foreground test
+commands and desktop-observer calibration are blocked before opening Chrome.
 
 Additional checks reject legacy visible routes before side effects and cover
 verification pauses, archive resume and saved foreground preferences. A fresh

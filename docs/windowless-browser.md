@@ -211,10 +211,12 @@ npm run test:package -- --browser
 For slower emulated VMs, `npm run test:package -- --browser --slow-vm` doubles
 only the overall unit/browser suite budgets (to eight and twenty minutes).
 Individual test deadlines, assertions and provider wait limits are unchanged.
-The package report records this option; native CI uses the normal budgets.
+The package report records this option; the Windows hosted runner uses it too.
 
-The default browser suite excludes tests that deliberately show windows. To
-include those manual recovery, crash-marker and lifecycle cases, opt in:
+Local browser tests exclude cases that deliberately show windows, including
+when a foreground-test environment variable was inherited. Manual recovery,
+crash-marker and visible lifecycle cases run only on CI desktops (`CI=true`).
+The workflows use these commands; locally they fail before starting the suite:
 
 ```sh
 npm run test:browser -- --foreground
@@ -272,7 +274,9 @@ node dist/cli.js browser check --provider chatgpt-web
 
 Only after that succeeds, run the explicit synthetic live acceptance. The macOS
 Swift observer cannot measure another OS. The portable desktop runner selects
-Win32 enumeration on Windows, X11 on Linux, or the Swift observer on macOS:
+Win32 enumeration on Windows, X11 on Linux, or the Swift observer on macOS.
+It requires a CI desktop because even the default probe displays a calibration
+window; local invocation stops before launching Chrome:
 
 ```sh
 node scripts/windowless-desktop.mjs
@@ -288,7 +292,7 @@ The normal **Tests** workflow also exercises Node 20/22/24 on all three OS famil
 and keeps per-OS package reports, passing/skipped counts, TAP logs and audit output.
 
 To explicitly send the two public synthetic reviews with a fresh temporary
-profile and native observation on any of the three OS families:
+profile and native observation on a CI desktop:
 
 ```sh
 node scripts/windowless-desktop.mjs --live-provider chatgpt-web

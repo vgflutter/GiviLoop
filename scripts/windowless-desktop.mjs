@@ -8,6 +8,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
+import { requireCiForVisibleTests } from './test-visibility.mjs';
+
+// Even the default probe deliberately displays a positive-control window.
+requireCiForVisibleTests();
 
 const { values } = parseArgs({ options: {
   'foreground-control': { type: 'boolean' },
