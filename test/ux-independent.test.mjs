@@ -355,15 +355,15 @@ test('independent UX: MCP advertises controls without defaults that override qui
   const f = fixture(t);
   const client = new Client({ name: 'giviloop-independent-ux-check', version: '1.0.0' });
   t.after(() => client.close());
-  await client.connect(new StdioClientTransport({ command: process.execPath, args: ['--import', bridgePath, path.join(distDir, 'mcp-server.js')], env: f.env, stderr: 'pipe' }));
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: ['--import', bridgePath, path.join(distDir, 'mcp-server.js'), '--tools', 'full'], env: f.env, stderr: 'pipe' }));
   const { tools } = await client.listTools();
-  for (const name of ['givi_status', 'givi_cancel', 'givi_open', 'givi_resume', 'givi_release_browser_sessions']) assert.ok(tools.some(tool => tool.name === name), name);
-  const webTools = tools.filter(tool => tool.inputSchema.properties?.background);
+  for (const name of ['givi_status', 'givi_cancel', 'givi_resume', 'givi_release_browser_sessions']) assert.ok(tools.some(tool => tool.name === name), name);
+  const webTools = tools.filter(tool => ['givi_send_to_web_llm','givi_send_to_chatgpt_web','givi_ask_web_llm'].includes(tool.name));
   assert.equal(webTools.length, 3);
   for (const tool of webTools) {
-    assert.equal(tool.inputSchema.properties.background.default, undefined, `${tool.name} should defer to saved/dynamic preference`);
+    assert.equal(tool.inputSchema.properties.background, undefined, `${tool.name} must offer no visibility override`);
     assert.equal(tool.inputSchema.properties.webProvider?.default, undefined, `${tool.name} must not replace a saved reviewer`);
-    assert.doesNotMatch(tool.inputSchema.properties.verificationWaitMs.description, /temporarily shows/);
+    assert.equal(tool.inputSchema.properties.verificationWaitMs, undefined);
   }
   const result = await client.callTool({ name: 'givi_status', arguments: { repositoryPath: f.repo } });
   assert.notEqual(result.isError, true);

@@ -230,5 +230,35 @@ test("MCP request cancellation aborts local inference while leaving the MCP serv
   assert.equal(existsSync(path.join(run.dir, "review.lock")), false);
   assert.equal(existsSync(run.response), false);
   assert.equal(JSON.parse(readFileSync(path.join(run.dir, "local-status.json"), "utf8")).errorCode, "LOCAL_CANCELLED");
-  assert.ok((await client.listTools()).tools.some(tool => tool.name === "givi_ask_local_llm"));
+  assert.ok((await client.listTools()).tools.some(tool => tool.name === "givi_review"));
+});
+
+test('compact review uses saved local reviewer for files and Git changes, preserves the contract and refuses resend', async t => {
+  const f=fixture(t,{git:true}), server=await localServer(t,'ollama');
+  assert.equal((await cli(f,'setup',['--provider','ollama','--model',modelFor('ollama'),'--base-url',server.url,'--non-interactive'])).code,0);
+  writeFileSync(path.join(f.repo,'code.ts'),'export const value = 2;\n');
+  const c=await connect(t,f);
+  const models=await c.callTool({name:'givi_manage_review',arguments:{action:'models',repositoryPath:f.repo}});
+  assert.match(joined(models),/local-test/);
+  for(const files of [['code.ts'],undefined]) {
+    const result=await c.callTool({name:'givi_review',arguments:{repositoryPath:f.repo,question:'Only nonempty arrays are valid.',...(files?{files}:{})}});
+    assert.notEqual(result.isError,true,joined(result));assert.match(joined(result),/Review locale/);
+    assert.match(readFileSync(f.latest().request,'utf8'),/Only nonempty arrays are valid/);
+    const run=f.latest();
+    await assert.rejects(c.callTool({name:'givi_review',arguments:{repositoryPath:f.repo,runId:run.id}}),/No resend/);
+  }
+  assert.equal(server.calls.filter(c=>c.path==='/api/chat').length,2);
+  const original=f.latest();
+  const finding=await c.callTool({name:'givi_record_finding',arguments:{repositoryPath:f.repo,runId:original.id,title:'Fixture claim',claim:'Needs investigation',status:'unverified',files:['code.ts']}});
+  const findingId=JSON.parse(joined(finding)).findingId;
+  const recheck=await c.callTool({name:'givi_manage_review',arguments:{action:'recheck',repositoryPath:f.repo,runId:original.id,findingId}});
+  assert.notEqual(recheck.isError,true,joined(recheck));
+  const prepared=f.latest();assert.notEqual(prepared.id,original.id);
+  assert.equal(server.calls.filter(c=>c.path==='/api/chat').length,2,'recheck only prepares');
+  await assert.rejects(c.callTool({name:'givi_review',arguments:{repositoryPath:f.repo,runId:prepared.id,question:'different request'}}),/cannot be combined/);
+  const sent=await c.callTool({name:'givi_review',arguments:{repositoryPath:f.repo,runId:prepared.id}});
+  assert.notEqual(sent.isError,true,joined(sent));
+  assert.equal(f.latest().id,prepared.id);
+  assert.equal(server.calls.filter(c=>c.path==='/api/chat').length,3);
+  assert.deepEqual(f.osCalls(),[]);
 });

@@ -9,6 +9,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { cliPath, distDir, fixture, repoRoot } from "../helpers.mjs";
 
+// These manual recovery tests intentionally show Chrome. Opt in explicitly.
+const foregroundTests = process.env.GIVILOOP_TEST_FOREGROUND === "1";
 const preload = new URL("../fixtures/browser-site.mjs", import.meta.url).href;
 const answer = "Review verificata: più contesto è utile.\nSeconda riga.";
 
@@ -70,7 +72,7 @@ for (const spec of webCases) {
     const prepared = await cli(f, 'ask', ['--question', 'Review', '--target-provider', spec.provider.replace('-web', '-chat')]);
     assert.equal(prepared.code, 0, prepared.stderr);
     const client = await connect(t, f);
-    const result = await client.callTool({name:'givi_send_to_web_llm', arguments:{repositoryPath:f.repo, webProvider:spec.provider, mode:'auto', headless:true, browserProfile:f.profile, responseStableMs:100, maxWaitMs:5000}});
+    const result = await client.callTool({name:'givi_send_to_web_llm', arguments:{repositoryPath:f.repo, webProvider:spec.provider, mode:'auto', browserProfile:f.profile, responseStableMs:100, maxWaitMs:5000}});
     assert.notEqual(result.isError, true, JSON.stringify(result));
     assert.equal(readFileSync(f.latest().response,'utf8'),answer);
     assert.equal(f.events().filter(e=>e.action==='submit').length,1);
@@ -98,7 +100,7 @@ for (const spec of webCases) {
   });
 }
 
-for (const spec of [webCases[1], webCases[2]]) test(`${spec.provider} quiet first-use cookie choice pauses; explicit foreground resume sends once`, { timeout: 30_000 }, async t => {
+for (const spec of [webCases[1], webCases[2]]) test(`${spec.provider} quiet first-use cookie choice pauses; explicit foreground resume sends once`, { timeout: 30_000, skip: !foregroundTests }, async t => {
   const f = otherFixture(t, spec);
   f.env.GIVILOOP_TEST_CAPTURE_WINDOW_STATE = '1';
   const html=readFileSync(f.env.GIVILOOP_TEST_PAGE,'utf8').replace('},900);','},2200);');
@@ -125,7 +127,7 @@ test('DeepSeek does not mistake the submitted user markdown and its copy button 
   assert.equal(f.events().filter(e=>e.action==='submit').length,1);
 });
 
-for (const headless of [true, false]) test(`${headless ? "headless" : "native headed"} browser preserves native cookies and closes cleanly`, { timeout: 30_000 }, async t => {
+for (const headless of [true, false]) test(`${headless ? "headless" : "native headed"} browser preserves native cookies and closes cleanly`, { timeout: 30_000, skip: !headless && !foregroundTests }, async t => {
   const f = fixture(t), profile = path.join(f.root, "native-store-profile");
   const { chromium } = createRequire(path.join(distDir, "cli.js"))("playwright");
   const { launchChatBrowser } = await import(pathToFileURL(path.join(distDir, "providers/browser-runtime.js")));
@@ -175,7 +177,7 @@ for (const headless of [true, false]) test(`${headless ? "headless" : "native he
   assert.match(report.nextStep, /browser check/);
 });
 
-test("a new Chrome window acknowledges an old crash marker and preserves the login store", { timeout: 30_000 }, async t => {
+test("a new Chrome window acknowledges an old crash marker and preserves the login store", { timeout: 30_000, skip: !foregroundTests }, async t => {
   const f = fixture(t), profile = path.join(f.root, "old-crash-profile");
   const { launchChatBrowser } = await import(pathToFileURL(path.join(distDir, "providers/browser-runtime.js")));
   const { diagnoseBrowser } = await import(pathToFileURL(path.join(distDir, "browser-commands.js")));
@@ -364,8 +366,10 @@ test('automatic login attention suspends new tasks; explicit resume sends the or
   assert.equal(JSON.parse(stopped.stdout).state, 'suspended');
   assert.equal(f.events().filter(e => e.action === 'submit').length, 0);
   delete f.env.GIVILOOP_TEST_LOGIN_PATH;
-  const resumed = await cli(f, 'resume', ['--run-id', result.runId]);
-  assert.equal(resumed.code, 0, resumed.stderr);
+  const client = await connect(t, f);
+  const resumed = await client.callTool({name:'givi_manage_review',arguments:{action:'resume',repositoryPath:f.repo,runId:result.runId}});
+  assert.notEqual(resumed.isError, true, JSON.stringify(resumed));
+  await assert.rejects(client.callTool({name:'givi_manage_review',arguments:{action:'resume',repositoryPath:f.repo,runId:result.runId}}), /resend|already|resume|needs-attention/i);
   const duplicate = await cli(f, 'auto-review', ['run', '--task-id', 'new-task', '--checks', 'passed', '--file', 'sum.js']);
   assert.equal(JSON.parse(duplicate.stdout).reason, 'unchanged-snapshot');
   assert.equal(f.events().filter(e => e.action === 'submit').length, 1);
@@ -430,7 +434,8 @@ test('CLI review uses saved preferences and resolves a relative repository once'
 
 test('saved defaults and MCP reuse keep two reviews isolated in one owned Chrome', { timeout: 30000 }, async t => {
   const f = otherFixture(t, webCases[1]);
-  const configured = await cli(f, 'setup', ['--non-interactive', '--provider', 'claude-web', '--browser-profile', f.profile]);
+  f.env.GIVILOOP_TEST_CAPTURE_WINDOW_STATE = '1';
+  const configured = await cli(f, 'setup', ['--foreground', '--non-interactive', '--provider', 'claude-web', '--browser-profile', f.profile]);
   assert.equal(configured.code, 0, configured.stderr);
   const client = await connect(t, f);
   for (const [index, question] of ['First independent review', 'Second independent review'].entries()) {
@@ -446,6 +451,7 @@ test('saved defaults and MCP reuse keep two reviews isolated in one owned Chrome
   assert.equal(f.events().filter(e => e.action === 'launch').length, 1);
   const submissions = f.events().filter(e => e.action === 'submit');
   assert.equal(submissions.length, 2);
+  assert.ok(submissions.every(event => event.windowState === 'windowless'));
   assert.match(submissions[1].prompt, /Second independent review/);
   assert.doesNotMatch(submissions[1].prompt, /First independent review/);
   const released = await client.callTool({ name: 'givi_release_browser_sessions', arguments: {} });
@@ -505,7 +511,7 @@ test('MCP stdin EOF closes retained Chrome without relying on a termination sign
   assert.equal(reopened.code, 0, reopened.stderr);
 });
 
-test("terminating a CLI check closes only its owned native Chrome and releases the profile", { timeout: 25_000, skip: process.platform === "win32" }, async t => {
+test("terminating a CLI check closes only its owned native Chrome and releases the profile", { timeout: 25_000, skip: process.platform === "win32" || !foregroundTests }, async t => {
   const f = setup(t);
   f.env.GIVILOOP_TEST_HTTP_STATUS = "403";
   f.env.GIVILOOP_TEST_CHALLENGE = "true";
@@ -577,7 +583,7 @@ test('evidence recheck sends the new snapshot through MCP and preserves parent r
   assert.equal(prepared.code, 0, prepared.stderr);
   const current = f.latest();
   const client = await connect(t, f);
-  const sent = await client.callTool({ name: 'givi_send_to_web_llm', arguments: { repositoryPath: f.repo, runId: current.id, mode: 'auto', headless: true, browserProfile: f.profile, responseStableMs: 100, maxWaitMs: 5000 } });
+  const sent = await client.callTool({ name: 'givi_send_to_web_llm', arguments: { repositoryPath: f.repo, runId: current.id, mode: 'auto', browserProfile: f.profile, responseStableMs: 100, maxWaitMs: 5000 } });
   assert.notEqual(sent.isError, true, JSON.stringify(sent));
   assert.equal(readFileSync(parent.response, 'utf8'), answer);
   assert.equal(readFileSync(current.response, 'utf8'), answer);
@@ -650,7 +656,7 @@ test("browser check returns a challenge before a composer or challenge DOM appea
   assert.equal(f.events().filter(event => event.action === "submit").length, 0);
 });
 
-test("headed CLI pauses for verification, resumes the same review, and sends exactly once", { timeout: 30_000 }, async t => {
+test("headed CLI pauses for verification, resumes the same review, and sends exactly once", { timeout: 30_000, skip: !foregroundTests }, async t => {
   const f = setup(t);
   f.env.GIVILOOP_TEST_VERIFICATION_FLOW = "true";
   const result = await cli(f, "ask", ["--question", "Review", "--send", "chatgpt-web", "--mode", "auto",
@@ -665,47 +671,24 @@ test("headed CLI pauses for verification, resumes the same review, and sends exa
   assert.equal(readFileSync(f.latest().response, "utf8"), answer);
 });
 
-test("MCP cancellation closes a browser waiting for human verification and keeps the server usable", { timeout: 30_000 }, async t => {
+test("MCP verification pauses without a window, submission or a human-wait loop", { timeout: 30_000 }, async t => {
   const f = setup(t);
   f.env.GIVILOOP_TEST_HTTP_STATUS = "403";
   f.env.GIVILOOP_TEST_CHALLENGE = "true";
   const client = await connect(t, f);
-  const controller = new AbortController();
-  const pending = client.callTool({ name: "givi_ask_web_llm", arguments: {
-    repositoryPath: f.repo, question: "Review", mode: "auto", browserProfile: f.profile,
-    verificationWaitMs: 20000, background: false,
-  } }, undefined, { signal: controller.signal, timeout: 25000 }).then(() => undefined, error => error);
-  t.after(() => controller.abort());
-  let run, status;
-  const deadline = Date.now() + 15000;
-  while (Date.now() < deadline) {
-    if (existsSync(path.join(f.repo, ".giviloop/latest-run-id"))) {
-      run = f.latest();
-      const file = path.join(run.dir, "browser-status.json");
-      if (existsSync(file)) status = JSON.parse(readFileSync(file, "utf8"));
-      if (status?.phase === "waiting-for-verification") break;
-    }
-    await new Promise(resolve => setTimeout(resolve, 25));
-  }
-  assert.equal(status?.phase, "waiting-for-verification");
-  controller.abort();
-  assert.ok(await pending, "the client receives cancellation rather than a completed answer");
-  const cleanupDeadline = Date.now() + 5000;
-  while (existsSync(path.join(run.dir, "review.lock")) && Date.now() < cleanupDeadline) {
-    await new Promise(resolve => setTimeout(resolve, 25));
-  }
-  status = JSON.parse(readFileSync(path.join(run.dir, "browser-status.json"), "utf8"));
-  assert.equal(status.errorCode, "BROWSER_CANCELLED");
-  assert.equal(status.outcome, "failed");
+  await client.callTool({ name: "givi_ask_web_llm", arguments: {
+    repositoryPath: f.repo, question: "Review", browserProfile: f.profile,
+  } }).catch(() => {});
+  const run = f.latest();
+  const status = JSON.parse(readFileSync(path.join(run.dir, "browser-status.json"), "utf8"));
+  assert.equal(status.errorCode, "ACCESS_CHALLENGE");
+  assert.equal(status.outcome, "needs-attention");
+  assert.equal(status.visibility, "windowless");
   assert.equal(status.submitted, false);
   assert.equal(existsSync(path.join(run.dir, "review.lock")), false);
   assert.equal(existsSync(run.response), false);
   assert.equal(f.events().filter(event => event.action === "submit").length, 0);
-  assert.ok((await client.listTools()).tools.some(tool => tool.name === "givi_ask_web_llm"));
-
-  // Reopening the same profile proves cancellation released Chrome's ownership.
-  const check = await cli(f, "browser", ["check", "--headless", "--browser-profile", f.profile]);
-  assert.equal(JSON.parse(check.stdout).errorCode, "ACCESS_CHALLENGE", check.stderr);
+  assert.ok((await client.listTools()).tools.some(tool => tool.name === "givi_review"));
 });
 
 test("CLI auto -> real headless browser -> saved response -> MCP read", { timeout: 30_000 }, async t => {
@@ -726,21 +709,33 @@ test("CLI auto -> real headless browser -> saved response -> MCP read", { timeou
   assert.ok(read.content.some(item => item.type === "text" && item.text.includes(answer)));
 });
 
-for (const variant of [{}, { mediaInputs: true }, { delayedUpload: true, background: true }]) test(`MCP sends a source archive only when uploads are ready${variant.mediaInputs ? "; skips photo/video inputs" : variant.delayedUpload ? "; explicit foreground waits for interactive controls" : ""}`, { timeout: 30_000 }, async t => {
+for (const variant of [{}, { mediaInputs: true }, { delayedUpload: true }]) test(`CLI manual archive upload waits for readiness ${JSON.stringify(variant)}`, { timeout: 30_000, skip: !foregroundTests }, async t => {
   const f = setup(t, { archive: true, ...variant });
   const prepared = await cli(f, "archive", ["--goal", "Review source", "--no-untracked"]);
   assert.equal(prepared.code, 0, prepared.stderr);
-  const client = await connect(t, f);
-  const result = await client.callTool({ name: "givi_send_to_web_llm", arguments: {
-    repositoryPath: f.repo, runId: f.latest().id, mode: "auto", headless: !variant.background, background: false,
-    browserProfile: f.profile, responseStableMs: 200, maxWaitMs: 5000,
-  } });
-  assert.notEqual(result.isError, true, JSON.stringify(result));
+  const result = await cli(f, "send", ["--mode", "auto", "--foreground", "--browser-profile", f.profile, "--response-stable-ms", "200", "--max-wait-ms", "5000"]);
+  assert.equal(result.code, 0, result.stderr);
   assert.equal(readFileSync(f.latest().response, "utf8"), answer);
   const submissions = f.events().filter(event => event.action === "submit");
   assert.equal(submissions.length, 1);
   assert.equal(submissions[0].uploadsReady, true);
   assert.deepEqual(submissions[0].files, ["source-context.zip"]);
+});
+
+test("MCP archive send and resume both pause for manual upload without showing Chrome", {timeout:30000}, async t => {
+  const f = setup(t, {archive:true});
+  assert.equal((await cli(f, 'archive', ['--goal','Review source','--no-untracked'])).code, 0);
+  const c = await connect(t,f), runId = f.latest().id;
+  const args = {repositoryPath:f.repo,runId,browserProfile:f.profile};
+  await c.callTool({name:'givi_send_to_web_llm',arguments:args}).catch(()=>{});
+  for(const name of ['givi_resume','givi_manage_review']) {
+    await c.callTool({name,arguments:{repositoryPath:f.repo,runId,...(name==='givi_manage_review'?{action:'resume'}:{})}}).catch(()=>{});
+    const status = JSON.parse(readFileSync(path.join(f.latest().dir,'browser-status.json'),'utf8'));
+    assert.equal(status.outcome,'needs-attention');
+    assert.equal(status.submitted,false);
+    assert.equal(status.visibility,'windowless');
+    assert.equal(f.events().filter(e=>e.action==='submit').length,0);
+  }
 });
 
 test("archive upload refuses disabled and media-only inputs before sending", { timeout: 15_000 }, async t => {
@@ -849,7 +844,7 @@ test('Claude optional-cookie dialog is rejected before the sole send', {timeout:
   assert.equal(readFileSync(f.latest().response,'utf8'),answer);
 });
 
-test('native maximized window can enter background mode and closes cleanly', {timeout:30000}, async t=>{
+test('native maximized window can enter background mode and closes cleanly', {timeout:30000, skip: !foregroundTests}, async t=>{
   const f=fixture(t),profile=path.join(f.root,'maximized-profile');
   const {launchChatBrowser,minimizeBrowser,profileOwnerPid}=await import(pathToFileURL(path.join(distDir,'providers/browser-runtime.js')));
   const c=await launchChatBrowser(profile,false);
@@ -932,4 +927,26 @@ test('native background pages ignore a target closed during discovery', {timeout
     await creator.detach().catch(()=>{});
     await context.close();
   }
+});
+
+test('compact review routes selected files and Git changes to saved windowless web reviewer', {timeout:60000}, async t => {
+  const f=otherFixture(t,webCases[1]);
+  f.env.GIVILOOP_TEST_CAPTURE_WINDOW_STATE = '1';
+  await enableAutomaticFixture(f);
+  const preferencesPath=path.join(f.repo,'.giviloop/preferences.json');
+  const preferences=JSON.parse(readFileSync(preferencesPath,'utf8'));
+  writeFileSync(preferencesPath,JSON.stringify({...preferences,background:false}));
+  const c=await connect(t,f);
+  for(const files of [['sum.js'],undefined]) {
+    const result=await c.callTool({name:'givi_review',arguments:{repositoryPath:f.repo,question:'Only nonempty arrays are in scope.',...(files?{files}:{})}});
+    assert.notEqual(result.isError,true,JSON.stringify(result));
+    const run=f.latest();
+    assert.equal(readFileSync(run.response,'utf8'),answer);
+    assert.match(readFileSync(run.request,'utf8'),/Only nonempty arrays are in scope/);
+    const status=JSON.parse(readFileSync(path.join(run.dir,'browser-status.json')));
+    assert.equal(status.visibility,'windowless');assert.equal(status.outcome,'completed');
+  }
+  const submissions=f.events().filter(e=>e.action==='submit');
+  assert.equal(submissions.length,2);
+  assert.ok(submissions.every(event=>event.windowState==='windowless'));
 });

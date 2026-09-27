@@ -120,7 +120,7 @@ async function main(): Promise<void> {
   const command = (args[0] ?? "help") as Command;
 
   try {
-    if (args.includes("--help") || args.includes("-h")) { printHelp(); return; }
+    if (args.includes("--help") || args.includes("-h")) { printHelp(args.includes("--all")); return; }
     if (args[0] === "--version") { console.log(VERSION); return; }
     args = configuredCliArgs(args);
     switch (command) {
@@ -205,7 +205,7 @@ async function main(): Promise<void> {
         break;
       }
       case "help":
-        printHelp();
+        printHelp(args.includes("--all"));
         break;
       default:
         throw new Error(`Unknown command: ${command}. Run givi help for available commands.`);
@@ -1970,7 +1970,34 @@ function commandExists(command: string): boolean {
   }
 }
 
-function printHelp(): void {
+function printHelp(detailed = false): void {
+  if (!detailed) {
+    console.log(`GiviLoop ${VERSION} — a second review with your saved web or local reviewer.
+
+Run in your project, or add --repo PATH.
+
+  givi setup                 Choose and save your reviewer once.
+  givi review                Send current Git changes for a second review.
+  givi status                See progress, the saved answer and the next action.
+  givi report                Export findings recorded by your coding agent.
+
+Selected files:
+  givi review --file src/example.ts --question "Find a concrete bug"
+
+Optional:
+  givi demo --offline         Try the workflow without sending anything.
+  givi auto-review enable --client codex
+                             Enable task-end checks in this project.
+  givi auto-review disable    Turn automatic checks off.
+
+If a review needs attention, follow givi status. Login/setup is manual.
+MCP web reviews are always windowless. Verify findings before applying changes.
+A report records an assessment; it does not prove the code is correct.
+
+  givi help --all             Full reference: providers, recovery and diagnostics.
+`);
+    return;
+  }
   console.log(`
 GiviLoop ${VERSION}
 

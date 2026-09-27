@@ -257,20 +257,26 @@ Request a model with `--model "EXACT LABEL"` / MCP `model`. Without `--require-m
 
 ## MCP Tools
 
-Most users should use natural-language IDE prompts, but the MCP tools are:
+The default server exposes eight tools:
 
-- givi_help
-- givi_local_models
-- givi_ask_local_llm
-- givi_send_to_local_llm
-- givi_prepare_from_git
-- givi_prepare_from_agent_context
-- givi_send_to_web_llm
-- givi_send_to_chatgpt_web
-- givi_read_external_review
-- givi_ask_web_llm
+- `givi_review`: review Git changes or selected files with the saved web/local reviewer.
+- `givi_auto_review`: the enabled automatic check, once per task/snapshot.
+- `givi_read_external_review`: read a saved answer.
+- `givi_record_finding`: add/update a finding in its explicit run.
+- `givi_list_findings`: inspect verdicts and stale evidence.
+- `givi_export_report`: save the assessment as Markdown.
+- `givi_status`: inspect a review without opening a browser.
+- `givi_manage_review`: cancel/resume/recheck, discover configured local models, or release idle browsers.
 
-Source archive creation is currently CLI-first. Use `givi archive --send chatgpt-web --mode auto` for that flow. MCP web-send tools can still send an existing source-archive run because they read the run metadata and attach `source-context.zip` automatically.
+Use `node dist/mcp-server.js --tools full` to advertise the advanced preparation,
+provider-specific send, local tuning and help tools as well (21 total). Older named review calls remain available, but visible-browser
+options are removed from every MCP profile. `givi_open` is no longer callable;
+`foreground`, `background: false`, `headless: true`, `prefill` and `submit` are
+rejected before sending. Saved foreground preferences cannot override this.
+The profile controls discovery, not permission.
+[Parameters, migration and validation](mcp-tools.md).
+
+MCP archive sends and resumes pause with `needs-attention`; they never open a visible upload window. The user can run `givi resume --repo /path/to/repo --run-id RUN_ID --foreground` manually for ZIP uploads. Login/setup also stays manual: `givi open --repo /path/to/repo --run-id RUN_ID`, then close Chrome and resume. Agents must not execute visible CLI recovery as a fallback.
 
 The important response modes are:
 
@@ -310,3 +316,36 @@ Use `givi setup` for prerequisites, saved provider/preferences and an MCP snippe
 `givi demo --offline` runs a labeled authored example without an account. `givi demo` uses the saved provider and sends only the bundled public source, then runs its fixed reproduction. `givi demo --finish` completes an interrupted demo after explicit login/resume without another submission. It never executes model-generated code.
 
 `givi report [--run-id ID]` / MCP `givi_export_report` exports current effective findings, evidence and hashes to the run's `double-check.md`. `--stdout` prints without saving; `--json` returns metadata and Markdown. Saved reports protect their runs from automatic retention cleanup. Inspect before sharing; no publishing or general test execution occurs. See the [before-commit recipe and first-use walkthrough](double-check.md).
+
+## Short help and HOL Guard scope
+
+`givi help` shows the everyday setup/review/status/report flow.
+`givi help --all` retains the complete CLI reference. This is a help/UI reduction,
+not removal of diagnostic capabilities or changes to submission semantics.
+MCP still has eight default tools and always uses windowless web sessions.
+
+The [HOL Guard contribution #3112](https://github.com/hashgraph-online/hol-guard/pull/3112)
+was checked on 2026-09-27: open, draft, not merged. It proposes optional controls
+for direct `givi auto-review enable|disable|acknowledge|run` and
+`givi findings add|update` calls. It excludes direct MCP calls and startup,
+`npm run givi`, Node wrappers, and other sends including `review` and `send`.
+It does not certify findings, provider permission or token savings.
+
+The proposal pins GiviLoop commit `322deef`, which contains CLI normalization
+and shortcuts absent from this checkout's base `043f097`. The current help change
+preserves command names and behavior, but does not establish compatibility with
+all of the proposal's parsing fixtures. Before qualifying a release with Guard,
+retest its source-bound fixtures against the exact release commit and update the
+pinned reference. GiviLoop does not require Guard to work.
+
+Publication checks on 2026-09-27 repeated the PR's 184 native cases both in
+isolation and in the complete HOL catalog, its 18 native integration tests,
+generated-artifact freshness and contribution handoff. All passed on PR head
+`fc951487`. These tests inspect shell commands without executing them. Separately,
+GiviLoop's `test/hol-cli-contract.test.mjs` executes the six canonical CLI operations
+against a synthetic local reviewer, creates two reviews, rejects missing/wrong
+review IDs and verifies that finding writes and acknowledgement do not resubmit.
+Neither result makes the draft PR available: it still needs its source references
+and parser documentation aligned with this release, resolution against HOL's
+current main branch, and upstream review/CI. Do not advertise HOL integration as
+released or as protection for the MCP workflow.

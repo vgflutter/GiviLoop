@@ -2,8 +2,13 @@
 
 Release summaries. Historical validation reports and full development notes remain in Git history. For current commands and limitations, see the [usage reference](docs/usage.md) and [provider results](docs/web-providers.md).
 
-## Unreleased
+## 0.9.0 — pending publication
 
+- Shorten default CLI help to setup/review/status/report; retain the full reference under `givi help --all`. Keep existing operation names and submission behavior. Document the limited, draft HOL Guard proposal and its different pinned CLI source.
+
+- Make every MCP web review and resume windowless, including advanced/legacy calls and repositories with saved foreground preferences. Remove `givi_open`, the management `open` action and visibility options; reject attempts to restore them before sending. Manual CLI login, verification and ZIP-upload recovery remain available. Browser tests that intentionally show windows now require `--foreground`; CI explicitly includes them.
+
+- Reduce default MCP discovery from twenty tools to eight. Add `givi_review` for saved web/local reviewers and `givi_manage_review` for grouped recovery/recheck/model discovery. Keep older named review calls available; `--tools full` advertises advanced tools. Preserve automatic-review approvals, scope and no-resend guards. Update the review skill and migration guide.
 - Background CLI/MCP reviews use hidden top-level pages in ordinary Chrome, supported by a bundled offscreen extension loaded through DevTools. Saved dedicated profiles and native cookie encryption are preserved; no manual extension installation is required.
 - Windowless startup failure stops with `WINDOWLESS_UNAVAILABLE` instead of opening a minimized or visible fallback. Login, verification and uploads retain their explicit foreground workflow.
 - Verify hidden pages across restarts, concurrent profiles, new pages, session reuse and installed-package execution. Pin Playwright 1.61.1 for its internal hidden-target attachment support.

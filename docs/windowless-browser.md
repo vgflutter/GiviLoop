@@ -213,8 +213,20 @@ only the overall unit/browser suite budgets (to eight and twenty minutes).
 Individual test deadlines, assertions and provider wait limits are unchanged.
 The package report records this option; native CI uses the normal budgets.
 
-The full browser suite deliberately opens windows for explicit foreground/login
-handoff checks. To run just the windowless regressions:
+The default browser suite excludes tests that deliberately show windows. To
+include those manual recovery, crash-marker and lifecycle cases, opt in:
+
+```sh
+npm run test:browser -- --foreground
+# Or verify the installed tarball with the same foreground cases:
+npm run test:package -- --browser --foreground
+```
+
+MCP review and resume tools always use windowless Chrome, including advanced
+and legacy calls. Only the manual CLI exposes visible recovery. A saved
+foreground preference cannot change MCP behavior.
+
+To run just the windowless regressions:
 
 ```sh
 node --test --test-concurrency=1 \

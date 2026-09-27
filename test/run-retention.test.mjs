@@ -59,6 +59,17 @@ test("unknown commands fail and help remains available without creating a run", 
   assert.match(invalid.stderr, /Unknown command/);
   const help = f.cli("ask", ["--help"]);
   assert.equal(help.status, 0);
-  assert.match(help.stdout, /--background/);
+  assert.match(help.stdout, /givi review/);
+  assert.match(help.stdout, /givi help --all/);
+  assert.doesNotMatch(help.stdout, /--headless|--response-stable-ms/);
+  const fullHelp = f.cli("help", ["--all"]);
+  assert.equal(fullHelp.status, 0);
+  assert.match(fullHelp.stdout, /--background/);
+  assert.match(fullHelp.stdout, /--response-stable-ms/);
+  for (const [command, action] of [["auto-review","enable"],["auto-review","disable"],
+    ["auto-review","acknowledge"],["auto-review","run"],["findings","add"],["findings","update"]]) {
+    assert.equal(f.cli(command, [action, "--help"]).status, 0);
+  }
+  assert.deepEqual(f.osCalls(), []);
   assert.equal(existsSync(path.join(f.repo, ".giviloop")), false);
 });

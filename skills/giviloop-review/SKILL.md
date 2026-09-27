@@ -13,13 +13,13 @@ Respect the user's existing authorization for the project, selected code and rev
 
 ## Choose MCP or CLI
 
-Confirm the project and configured reviewer; do not rely on an unconfigured default. Use `givi_help` (MCP) or `givi help` (CLI) for options. Let GiviLoop collect Git/file context; provide only a short goal, not a long conversation summary.
+Confirm the project and configured reviewer; do not rely on an unconfigured default. Let GiviLoop collect Git/file context; provide a short goal and relevant task contracts, not a long conversation summary. The default MCP surface has eight tools; advanced preparation/provider options are discoverable with server arguments `--tools full`, or through `givi help` in the CLI.
 
 ### MCP
 
-1. Call `givi_prepare_from_git` with the absolute `repositoryPath` and optional `taskGoal`. For web review, match `targetProvider` (e.g. `claude-chat`) to the configured `webProvider` (`claude-web`). Inspect the request and omissions; save its `runId`. Use `givi_prepare_from_agent_context` only when conversation context is requested.
-2. Send that exact run once within the authorized scope. Pass `repositoryPath` and `runId` to `givi_send_to_web_llm` with the configured `webProvider`, `mode: "auto"`, `background: true`, `reviewResponseMode: "analyze-only"`; or to `givi_send_to_local_llm` with the configured `provider` and exact installed `model` (discover with `givi_local_models` if needed).
-3. Pass that same `repositoryPath` and `runId` to `givi_status`, then `givi_read_external_review` with `reviewResponseMode: "analyze-only"`.
+1. Within the authorized scope, call `givi_review` with the absolute `repositoryPath` and a concise `question` including relevant contracts. It reviews Git changes using the saved web/local reviewer; use `files` to select source/tests/contracts instead. It sends immediately. If preparation must be inspected before sending, use the CLI prepare flow below or the advanced MCP profile. Save the returned run ID.
+2. If a prepared request already exists, call `givi_review` with its exact `runId`, without question/files. Never start another review to send an existing request. For an enabled automatic check, follow the project's `givi_auto_review` rule instead; do not use `givi_review` as a fallback after a skipped or stopped automatic check.
+3. Use that same `runId` for `givi_status` and, if the answer was not already returned, `givi_read_external_review` with `reviewResponseMode: "analyze-only"`. `givi_manage_review` groups explicit recovery actions and local model discovery; all MCP web reviews and resumes are windowless. There is no open/foreground action. On `needs-attention`, ask the user to run CLI `givi open` (or `givi browser login`) manually and close Chrome; ZIP uploads require manual `givi resume --foreground`. Never execute visible CLI recovery as a fallback or retry a stopped send automatically.
 
 ### CLI
 
@@ -39,4 +39,4 @@ Use `confirmed` for supported findings, `dismissed` for disproven claims, and `u
 - **MCP:** use `givi_record_finding` with `repositoryPath`, the sent `runId`, `title`, `claim`, `files`, `status`, `reason`, `evidence`. For updates, supply the finding's `id` and omit title/claim. Use the same run ID with `givi_list_findings` and `givi_export_report`.
 - **CLI:** use `givi findings add|update|list` and `givi report`, always with `--repo /path/to/project --run-id RUN_ID`. Creation uses `--title`, `--claim`; updates use `--id`. Record `--status`, `--reason`, and repeatable `--file`/`--evidence` options on add/update.
 
-Flag stale assessments and missing checks. `givi_prepare_recheck` or `givi recheck` prepares a new run without sending; use its new ID for sending, reading, findings and report, preserving the original history. Summarize verdicts, tests and report path. An empty ledger is not proof of clean code. GiviLoop records assessments; it does not execute or certify your tests. Total token savings have not been measured.
+Flag stale assessments and missing checks. `givi_manage_review` with `action: "recheck"`, the original `runId` and `findingId` (or CLI `givi recheck`) prepares a new run without sending; use its new ID for sending, reading, findings and report, preserving the original history. Summarize verdicts, tests and report path. An empty ledger is not proof of clean code. GiviLoop records assessments; it does not execute or certify your tests. Total token savings have not been measured.

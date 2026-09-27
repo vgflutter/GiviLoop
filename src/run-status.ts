@@ -43,7 +43,7 @@ export function runStatus(repository: string, runId?: string) {
   const resumable = state === "needs-attention" && status?.submitted === false && !locked && !requestChanged;
   return { runId: run.id, state, phase: status?.phase, provider: status?.provider, submitted: status?.submitted ?? "not recorded", responseAvailable: responseExists, responsePath: responseExists ? run.file("external-review-response.md") : undefined, profile: status?.profile, locked, active, requestChanged: Boolean(requestChanged), resumable, cancellable: active && status?.outcome === "running" && typeof status?.controlToken === "string", errorCode: status?.errorCode,
     nextStep: requestChanged ? "The saved request changed; prepare a new review."
-      : state === "needs-attention" ? "Run givi open to finish login/setup, quit that Chrome, then givi resume. Uploads require givi resume --foreground."
+      : state === "needs-attention" ? "User: manually run givi open to finish login/setup, quit that Chrome, then resume. Uploads require manual CLI givi resume --foreground. Agents must not execute visible CLI recovery as a fallback."
       : state === "running" ? "Review running. Use givi cancel to request cancellation."
       : state === "interrupted" || locked && !active ? "Worker stopped. Inspect saved status and the stale review.lock before removing it; do not blindly resend."
       : state === "completed" || state === "response-saved" ? "Read the saved response and independently verify findings."

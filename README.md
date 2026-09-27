@@ -12,6 +12,8 @@ CLI + MCP · Web chat + local models · Open source · MIT
 
 **What “token savings” means:** if you would otherwise buy that review through an API, this avoids its separate API input/output token charges. The web chat still uses its plan's quotas, and your coding agent still uses tokens to prepare context and check the answer. **Total token savings are not measured.** [Costs and access](docs/costs-and-access.md).
 
+**Measured agent usage:** in a [10-run pilot](docs/benchmarks/token-pilot-2026-09-27.md), GiviLoop used more agent tokens than an internal self-review. Avoiding a duplicate review reduced the aggregate count but increased uncached input and output; this does not establish lower cost. [Reproduce the benchmark](docs/token-benchmark.md).
+
 ## See it work
 
 [![Watch setup, review and evidence](https://raw.githubusercontent.com/vgflutter/GiviLoop/main/docs/media/double-check-preview.png)](https://github.com/vgflutter/GiviLoop/releases/download/v0.5.0/giviloop-double-check.mp4)
@@ -43,7 +45,7 @@ Setup saves your choice and generates `.giviloop/mcp.json` for your MCP client; 
 
 ChatGPT can also work without login when its website offers a usable chat. Use `--provider chatgpt-web` to choose it; availability and limits remain controlled by the site.
 
-**In the current source checkout, background reviews run without a browser window.** GiviLoop uses regular Chrome and a small bundled offscreen extension in its dedicated profile; no manual extension installation is needed. This unreleased change passed real anonymous ChatGPT reviews on macOS, Windows Server 2025 and Ubuntu X11, with native desktop observation. Login, cookie choices, verification or uploads pause with **needs-attention**. Use `status`, then `open` and `resume` when convenient; ZIP uploads require `resume --foreground`. If windowless startup is unavailable, GiviLoop stops without opening a visible fallback. [Validation and requirements](docs/windowless-browser.md).
+**Agent/MCP web reviews always run without a browser window.** GiviLoop uses regular Chrome and a small bundled offscreen extension in its dedicated profile; no manual extension installation is needed. The windowless implementation passed real anonymous ChatGPT reviews on macOS, Windows Server 2025 and Ubuntu X11, with native desktop observation. Login, cookie choices, verification or uploads pause with **needs-attention**. The agent cannot open Chrome visibly: run CLI `givi open` yourself for login/setup, close Chrome, then resume. ZIP uploads require manual CLI `givi resume --foreground`. If windowless startup is unavailable, GiviLoop stops without opening a visible fallback. [Validation and requirements](docs/windowless-browser.md).
 
 **Do not use `--headless` for ChatGPT:** that separate diagnostic mode was blocked by site verification with and without login. The new background mode uses ordinary Chrome without `--headless`; it does not guarantee access whenever a provider requests verification.
 
@@ -66,7 +68,9 @@ Manual `copy --open` / `ingest` works with all four prompt formats. [Local model
 
 ## Stay in your editor
 
-After setup, `givi review` reviews your Git changes with the saved provider. `givi ask` and `givi prepare` still only prepare context unless you explicitly request sending.
+The everyday flow has four commands: **`givi setup` → `givi review` → `givi status` → `givi report`**. Your coding agent verifies and records findings before exporting the report. No browser-mode or timing flags are needed.
+
+`givi help` shows this short path. `givi help --all` lists preparation, recovery and diagnostic options. `givi ask` and `givi prepare` still only prepare context unless you explicitly request sending.
 
 - `givi status` — see progress, the saved answer and the next action.
 - `givi open` / `givi resume` — handle a paused login/setup when convenient, then continue. Resume refuses requests already sent or of uncertain status.
@@ -89,12 +93,13 @@ Add this stdio server to your MCP client's configuration:
 }
 ```
 
+**Eight tools by default:** one entry point for a review with your saved web/local reviewer, automatic review, response reading, findings, report, status and grouped recovery. Advanced integrations can add `"--tools", "full"` after the server path to discover all commands. Older review calls remain available; visible-browser options are removed from MCP. [Tool surface](docs/mcp-tools.md).
+
 Then ask:
 
 ```text
 Double-check my current Git changes with GiviLoop.
-Use my saved reviewer. Keep the browser in the background.
-Read the review in analyze-only mode. Verify each finding against the code
+Use my saved reviewer. Verify each finding against the code
 and tests; report confirmed, dismissed or unverified, with reasons.
 Do not edit files.
 ```

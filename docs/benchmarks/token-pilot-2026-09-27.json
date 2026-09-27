@@ -1,0 +1,627 @@
+{
+  "metadata": {
+    "startedAt": "2026-09-27T16:40:18.026Z",
+    "sourceCommit": "043f09729b4c1ea5e23cf961b4cd4e6832117947",
+    "host": "codex-cli 0.154.0-alpha.6.2",
+    "model": "gpt-6-astra",
+    "effort": "xhigh",
+    "provider": "claude-web",
+    "node": "v22.21.1",
+    "platform": "darwin/arm64",
+    "samplesPerArm": 2,
+    "webTokensAvailable": false,
+    "taskHashes": [
+      {
+        "task": "allocation",
+        "sha256": "269a01b9fefdff81dfbb18759c88979d1566d48cc08b0d4b52d1eaff1e287d67"
+      },
+      {
+        "task": "ttl-cache",
+        "sha256": "7dc3cf2cf84e2c51a3e85309e0558986f005e0b44cf27d9d17cf289fc4647055"
+      }
+    ],
+    "selectedArms": [
+      "normal",
+      "no-second-review",
+      "self-review",
+      "giviloop",
+      "giviloop-normal"
+    ]
+  },
+  "rows": [
+    {
+      "task": "allocation",
+      "arm": "normal",
+      "complete": true,
+      "elapsedMs": 95022,
+      "quality": {
+        "passed": true,
+        "cases": 27
+      },
+      "usage": {
+        "inputTokens": 61229,
+        "cachedInputTokens": 51200,
+        "uncachedInputTokens": 10029,
+        "outputTokens": 2575,
+        "reasoningOutputTokens": 902,
+        "observedAgentTokens": 63804
+      },
+      "commands": 6,
+      "mcpCalls": [],
+      "review": null
+    },
+    {
+      "task": "allocation",
+      "arm": "no-second-review",
+      "complete": true,
+      "elapsedMs": 69979,
+      "quality": {
+        "passed": true,
+        "cases": 27
+      },
+      "usage": {
+        "inputTokens": 60479,
+        "cachedInputTokens": 54144,
+        "uncachedInputTokens": 6335,
+        "outputTokens": 1969,
+        "reasoningOutputTokens": 516,
+        "observedAgentTokens": 62448
+      },
+      "commands": 4,
+      "mcpCalls": [],
+      "review": null
+    },
+    {
+      "task": "allocation",
+      "arm": "self-review",
+      "complete": true,
+      "elapsedMs": 112507,
+      "quality": {
+        "passed": true,
+        "cases": 27
+      },
+      "usage": {
+        "inputTokens": 99526,
+        "cachedInputTokens": 89728,
+        "uncachedInputTokens": 9798,
+        "outputTokens": 3261,
+        "reasoningOutputTokens": 987,
+        "observedAgentTokens": 102787
+      },
+      "commands": 6,
+      "mcpCalls": [],
+      "review": null
+    },
+    {
+      "task": "allocation",
+      "arm": "giviloop",
+      "complete": true,
+      "elapsedMs": 191079,
+      "quality": {
+        "passed": true,
+        "cases": 27
+      },
+      "usage": {
+        "inputTokens": 243402,
+        "cachedInputTokens": 227584,
+        "uncachedInputTokens": 15818,
+        "outputTokens": 3598,
+        "reasoningOutputTokens": 868,
+        "observedAgentTokens": 247000
+      },
+      "commands": 6,
+      "mcpCalls": [
+        {
+          "tool": "givi_auto_review",
+          "status": "completed"
+        },
+        {
+          "tool": "givi_record_finding",
+          "status": "completed"
+        },
+        {
+          "tool": "givi_record_finding",
+          "status": "completed"
+        },
+        {
+          "tool": "givi_export_report",
+          "status": "completed"
+        }
+      ],
+      "review": {
+        "attempts": 1,
+        "states": [
+          {
+            "state": "completed",
+            "responseAvailable": true
+          }
+        ],
+        "assessmentExported": true,
+        "recordedFindings": {
+          "confirmed": 0,
+          "dismissed": 2,
+          "unverified": 0
+        }
+      }
+    },
+    {
+      "task": "ttl-cache",
+      "arm": "giviloop",
+      "complete": true,
+      "elapsedMs": 248803,
+      "quality": {
+        "passed": true,
+        "cases": 10
+      },
+      "usage": {
+        "inputTokens": 305321,
+        "cachedInputTokens": 275968,
+        "uncachedInputTokens": 29353,
+        "outputTokens": 5166,
+        "reasoningOutputTokens": 1126,
+        "observedAgentTokens": 310487
+      },
+      "commands": 7,
+      "mcpCalls": [
+        {
+          "tool": "givi_auto_review",
+          "status": "completed"
+        },
+        {
+          "tool": "givi_record_finding",
+          "status": "completed"
+        },
+        {
+          "tool": "givi_export_report",
+          "status": "completed"
+        }
+      ],
+      "review": {
+        "attempts": 1,
+        "states": [
+          {
+            "state": "completed",
+            "responseAvailable": true
+          }
+        ],
+        "assessmentExported": true,
+        "recordedFindings": {
+          "confirmed": 0,
+          "dismissed": 1,
+          "unverified": 0
+        }
+      }
+    },
+    {
+      "task": "ttl-cache",
+      "arm": "self-review",
+      "complete": true,
+      "elapsedMs": 125548,
+      "quality": {
+        "passed": true,
+        "cases": 10
+      },
+      "usage": {
+        "inputTokens": 83724,
+        "cachedInputTokens": 72960,
+        "uncachedInputTokens": 10764,
+        "outputTokens": 3738,
+        "reasoningOutputTokens": 673,
+        "observedAgentTokens": 87462
+      },
+      "commands": 6,
+      "mcpCalls": [],
+      "review": null
+    },
+    {
+      "task": "ttl-cache",
+      "arm": "no-second-review",
+      "complete": true,
+      "elapsedMs": 107202,
+      "quality": {
+        "passed": true,
+        "cases": 10
+      },
+      "usage": {
+        "inputTokens": 79644,
+        "cachedInputTokens": 71808,
+        "uncachedInputTokens": 7836,
+        "outputTokens": 3097,
+        "reasoningOutputTokens": 257,
+        "observedAgentTokens": 82741
+      },
+      "commands": 4,
+      "mcpCalls": [],
+      "review": null
+    },
+    {
+      "task": "ttl-cache",
+      "arm": "normal",
+      "complete": true,
+      "elapsedMs": 110677,
+      "quality": {
+        "passed": true,
+        "cases": 10
+      },
+      "usage": {
+        "inputTokens": 79047,
+        "cachedInputTokens": 68608,
+        "uncachedInputTokens": 10439,
+        "outputTokens": 3061,
+        "reasoningOutputTokens": 297,
+        "observedAgentTokens": 82108
+      },
+      "commands": 5,
+      "mcpCalls": [],
+      "review": null
+    },
+    {
+      "task": "allocation",
+      "arm": "giviloop-normal",
+      "complete": true,
+      "elapsedMs": 183821,
+      "quality": {
+        "passed": true,
+        "cases": 27
+      },
+      "usage": {
+        "inputTokens": 259861,
+        "cachedInputTokens": 240768,
+        "uncachedInputTokens": 19093,
+        "outputTokens": 3334,
+        "reasoningOutputTokens": 748,
+        "observedAgentTokens": 263195
+      },
+      "commands": 6,
+      "mcpCalls": [
+        {
+          "tool": "givi_auto_review",
+          "status": "completed"
+        },
+        {
+          "tool": "givi_record_finding",
+          "status": "completed"
+        },
+        {
+          "tool": "givi_record_finding",
+          "status": "completed"
+        },
+        {
+          "tool": "givi_record_finding",
+          "status": "completed"
+        },
+        {
+          "tool": "givi_export_report",
+          "status": "completed"
+        }
+      ],
+      "review": {
+        "attempts": 1,
+        "states": [
+          {
+            "state": "completed",
+            "responseAvailable": true
+          }
+        ],
+        "assessmentExported": true,
+        "recordedFindings": {
+          "confirmed": 0,
+          "dismissed": 3,
+          "unverified": 0
+        }
+      }
+    },
+    {
+      "task": "ttl-cache",
+      "arm": "giviloop-normal",
+      "complete": true,
+      "elapsedMs": 261209,
+      "quality": {
+        "passed": true,
+        "cases": 10
+      },
+      "usage": {
+        "inputTokens": 328435,
+        "cachedInputTokens": 310400,
+        "uncachedInputTokens": 18035,
+        "outputTokens": 4766,
+        "reasoningOutputTokens": 764,
+        "observedAgentTokens": 333201
+      },
+      "commands": 6,
+      "mcpCalls": [
+        {
+          "tool": "givi_auto_review",
+          "status": "completed"
+        },
+        {
+          "tool": "givi_record_finding",
+          "status": "completed"
+        },
+        {
+          "tool": "givi_export_report",
+          "status": "completed"
+        }
+      ],
+      "review": {
+        "attempts": 1,
+        "states": [
+          {
+            "state": "completed",
+            "responseAvailable": true
+          }
+        ],
+        "assessmentExported": true,
+        "recordedFindings": {
+          "confirmed": 0,
+          "dismissed": 1,
+          "unverified": 0
+        }
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "baseline": "normal",
+      "candidate": "giviloop",
+      "pairs": [
+        {
+          "task": "allocation",
+          "comparable": true,
+          "agentTokens": {
+            "baseline": 63804,
+            "candidate": 247000,
+            "saved": -183196,
+            "savedPercent": -287.1230643846781
+          },
+          "uncachedInput": {
+            "baseline": 10029,
+            "candidate": 15818,
+            "saved": -5789,
+            "savedPercent": -57.7226044471034
+          },
+          "output": {
+            "baseline": 2575,
+            "candidate": 3598,
+            "saved": -1023,
+            "savedPercent": -39.728155339805824
+          }
+        },
+        {
+          "task": "ttl-cache",
+          "comparable": true,
+          "agentTokens": {
+            "baseline": 82108,
+            "candidate": 310487,
+            "saved": -228379,
+            "savedPercent": -278.14463876845133
+          },
+          "uncachedInput": {
+            "baseline": 10439,
+            "candidate": 29353,
+            "saved": -18914,
+            "savedPercent": -181.18593735032093
+          },
+          "output": {
+            "baseline": 3061,
+            "candidate": 5166,
+            "saved": -2105,
+            "savedPercent": -68.76837634759883
+          }
+        }
+      ],
+      "claim": "Paired observations only; no estimate of web tokens, money, quota or general savings."
+    },
+    {
+      "baseline": "no-second-review",
+      "candidate": "giviloop",
+      "pairs": [
+        {
+          "task": "allocation",
+          "comparable": true,
+          "agentTokens": {
+            "baseline": 62448,
+            "candidate": 247000,
+            "saved": -184552,
+            "savedPercent": -295.529080194722
+          },
+          "uncachedInput": {
+            "baseline": 6335,
+            "candidate": 15818,
+            "saved": -9483,
+            "savedPercent": -149.6921862667719
+          },
+          "output": {
+            "baseline": 1969,
+            "candidate": 3598,
+            "saved": -1629,
+            "savedPercent": -82.73235144743525
+          }
+        },
+        {
+          "task": "ttl-cache",
+          "comparable": true,
+          "agentTokens": {
+            "baseline": 82741,
+            "candidate": 310487,
+            "saved": -227746,
+            "savedPercent": -275.2516890054507
+          },
+          "uncachedInput": {
+            "baseline": 7836,
+            "candidate": 29353,
+            "saved": -21517,
+            "savedPercent": -274.59162838182743
+          },
+          "output": {
+            "baseline": 3097,
+            "candidate": 5166,
+            "saved": -2069,
+            "savedPercent": -66.80658701969648
+          }
+        }
+      ],
+      "claim": "Paired observations only; no estimate of web tokens, money, quota or general savings."
+    },
+    {
+      "baseline": "self-review",
+      "candidate": "giviloop",
+      "pairs": [
+        {
+          "task": "allocation",
+          "comparable": true,
+          "agentTokens": {
+            "baseline": 102787,
+            "candidate": 247000,
+            "saved": -144213,
+            "savedPercent": -140.30276202243473
+          },
+          "uncachedInput": {
+            "baseline": 9798,
+            "candidate": 15818,
+            "saved": -6020,
+            "savedPercent": -61.44111043070014
+          },
+          "output": {
+            "baseline": 3261,
+            "candidate": 3598,
+            "saved": -337,
+            "savedPercent": -10.334253296534806
+          }
+        },
+        {
+          "task": "ttl-cache",
+          "comparable": true,
+          "agentTokens": {
+            "baseline": 87462,
+            "candidate": 310487,
+            "saved": -223025,
+            "savedPercent": -254.9964556035764
+          },
+          "uncachedInput": {
+            "baseline": 10764,
+            "candidate": 29353,
+            "saved": -18589,
+            "savedPercent": -172.6960237829803
+          },
+          "output": {
+            "baseline": 3738,
+            "candidate": 5166,
+            "saved": -1428,
+            "savedPercent": -38.20224719101123
+          }
+        }
+      ],
+      "claim": "Paired observations only; no estimate of web tokens, money, quota or general savings."
+    },
+    {
+      "baseline": "giviloop-normal",
+      "candidate": "giviloop",
+      "pairs": [
+        {
+          "task": "allocation",
+          "comparable": true,
+          "agentTokens": {
+            "baseline": 263195,
+            "candidate": 247000,
+            "saved": 16195,
+            "savedPercent": 6.153232394232414
+          },
+          "uncachedInput": {
+            "baseline": 19093,
+            "candidate": 15818,
+            "saved": 3275,
+            "savedPercent": 17.15288325564343
+          },
+          "output": {
+            "baseline": 3334,
+            "candidate": 3598,
+            "saved": -264,
+            "savedPercent": -7.918416316736653
+          }
+        },
+        {
+          "task": "ttl-cache",
+          "comparable": true,
+          "agentTokens": {
+            "baseline": 333201,
+            "candidate": 310487,
+            "saved": 22714,
+            "savedPercent": 6.816906311805787
+          },
+          "uncachedInput": {
+            "baseline": 18035,
+            "candidate": 29353,
+            "saved": -11318,
+            "savedPercent": -62.75575270307735
+          },
+          "output": {
+            "baseline": 4766,
+            "candidate": 5166,
+            "saved": -400,
+            "savedPercent": -8.392782207301721
+          }
+        }
+      ],
+      "claim": "Paired observations only; no estimate of web tokens, money, quota or general savings."
+    },
+    {
+      "baseline": "normal",
+      "candidate": "no-second-review",
+      "pairs": [
+        {
+          "task": "allocation",
+          "comparable": true,
+          "agentTokens": {
+            "baseline": 63804,
+            "candidate": 62448,
+            "saved": 1356,
+            "savedPercent": 2.1252586044762083
+          },
+          "uncachedInput": {
+            "baseline": 10029,
+            "candidate": 6335,
+            "saved": 3694,
+            "savedPercent": 36.83318376707548
+          },
+          "output": {
+            "baseline": 2575,
+            "candidate": 1969,
+            "saved": 606,
+            "savedPercent": 23.533980582524272
+          }
+        },
+        {
+          "task": "ttl-cache",
+          "comparable": true,
+          "agentTokens": {
+            "baseline": 82108,
+            "candidate": 82741,
+            "saved": -633,
+            "savedPercent": -0.7709358406001852
+          },
+          "uncachedInput": {
+            "baseline": 10439,
+            "candidate": 7836,
+            "saved": 2603,
+            "savedPercent": 24.93533863396877
+          },
+          "output": {
+            "baseline": 3061,
+            "candidate": 3097,
+            "saved": -36,
+            "savedPercent": -1.1760862463247306
+          }
+        }
+      ],
+      "claim": "Paired observations only; no estimate of web tokens, money, quota or general savings."
+    }
+  ],
+  "unknown": [
+    "Web reviewer tokens",
+    "Total workflow tokens",
+    "Actual money saved",
+    "Subscription quota consumed"
+  ],
+  "limits": "Two synthetic tasks; one observation per task/arm. No general savings rate or statistical significance. Failed and incomplete attempts remain visible."
+}

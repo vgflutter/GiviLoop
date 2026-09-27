@@ -11,7 +11,9 @@ GiviLoop has no hosted service or paid plan. Its two current use cases are a sec
 
 If you would otherwise buy an API review, completing it through an already available chat account can avoid that particular API expense. If you would otherwise do no second review, adding one does not save that expense. This comparison says nothing about equal quality, model identity, context limits or latency.
 
-GiviLoop does **not** measure web token usage, subscription quota consumption, total agent tokens or money saved. Runtime-reported local token counts are saved when available. A second review may increase total tokens even when it avoids incremental API billing. Do not turn unavailable measurements into a percentage-saved claim.
+GiviLoop's normal review workflow does **not** meter the calling agent's full session, web token usage, subscription quota consumption or money saved. A separate [reproducible benchmark](token-benchmark.md) reads actual Codex session usage and compares review instructions, with independent correctness checks. Runtime-reported local token counts are saved when available. A second review may increase total tokens even when it avoids incremental API billing. Do not turn unavailable measurements into a percentage-saved claim.
+
+The [first ten-session pilot](benchmarks/token-pilot-2026-09-27.md) found higher agent usage with GiviLoop than with an internal self-review on two small tasks. Avoiding duplicate review reduced aggregate GiviLoop tokens by 6.5%, but uncached input increased 21.7% and output increased 8.2%. That is not a measured reduction in money, subscription quota or total workflow tokens.
 
 ## Two different ways to use a website
 

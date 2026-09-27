@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { WEB_CONFIG, WEB_PROVIDERS, TARGET_PROVIDERS, webProvider, targetForWeb, webForTarget, assertWebTarget, type WebProvider, type TargetProvider } from "./providers/web-config.js";
+import { DEFAULT_MCP_TOOLS, mcpToolProfile, compactReviewTool, compactManageTool } from "./mcp-surface.js";
 import { redactSecrets } from "./redaction.js";
-import { LOCAL_PROVIDERS } from "./providers/local-types.js";
+import { LOCAL_PROVIDERS, isLocalProvider } from "./providers/local-types.js";
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -22,7 +23,7 @@ import { recordFinding, readFindings, prepareRecheck } from "./review-evidence.j
 import { exportReviewReport } from "./review-report.js";
 import { automaticReview, autoReviewTool } from "./auto-review.js";
 import { webDefaults, readPreferences } from "./preferences.js";
-import { runStatus, cancelRun, openRun, resumeRun } from "./run-status.js";
+import { runStatus, cancelRun, resumeRun } from "./run-status.js";
 import { browserSessions } from "./providers/browser-sessions.js";
 import { probeLocalProvider, readLocalProvider, readLocalReasoning, sendLocalReview, type LocalRunOptions } from "./providers/local-review.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -153,6 +154,8 @@ const DEFAULT_MAX_FILE_SIZE_BYTES = 40_000;
 const DEFAULT_MAX_TOTAL_PACKAGE_BYTES = 400_000;
 const MAX_REVIEW_RUNS = 10;
 
+const toolProfile = mcpToolProfile(process.argv.slice(2));
+
 const server = new Server(
   {
     name: "giviloop",
@@ -166,13 +169,12 @@ const server = new Server(
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return {
-    tools: [
+  const tools = [
+      compactReviewTool, compactManageTool,
       { name: "givi_release_browser_sessions", description: "Close idle Chrome sessions owned by this MCP server before manual login or changing providers. Active reviews are left running. Idle sessions otherwise expire after 60 seconds.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
-      ...["status", "cancel", "open", "resume"].map(action => ({ name: `givi_${action}`, description: action === "status" ? "Read saved review state without opening a browser. Reports attention, submission, cancellation and safe-resume availability."
+      ...["status", "cancel", "resume"].map(action => ({ name: `givi_${action}`, description: action === "status" ? "Read saved review state without opening a browser. Reports attention, submission, cancellation and safe-resume availability."
         : action === "cancel" ? "Request cooperative cancellation of the selected active review. Does not signal arbitrary OS processes or retract a submitted prompt."
-        : action === "open" ? "Only on explicit user request: show the dedicated browser for login/setup. Sends no prompt. User must close it before resume."
-        : "Resume only a needs-attention review whose prompt was never submitted and whose request is unchanged. Never resends completed, uncertain or failed sends. Explicit foreground=true permits a visible session for uploads/verification.", inputSchema: { type: "object" as const, properties: { repositoryPath: { type: "string" }, runId: { type: "string" }, ...(action === "resume" ? { foreground: { type: "boolean" } } : {}) }, required: ["repositoryPath"], additionalProperties: false } })),
+        : "Resume only a needs-attention review whose prompt was never submitted and whose request is unchanged. Never resends completed, uncertain or failed sends. Always windowless. Login, verification and uploads require manual CLI recovery by the user.", inputSchema: { type: "object" as const, properties: { repositoryPath: { type: "string" }, runId: { type: "string" } }, required: ["repositoryPath"], additionalProperties: false } })),
       ...evidenceTools,
       autoReviewTool,
       {
@@ -305,7 +307,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: TOOL_SEND_TO_WEB_LLM,
         description:
-          "Launch a local web LLM bridge for an already prepared GiviLoop review request. For ChatGPT source-archive runs, attach source-context.zip automatically. Browser providers: ChatGPT, DeepSeek, Claude and Gemini. No API key. Anonymous sessions work when allowed; otherwise use browser login --provider. New providers are experimental and text-only; ZIP uploads and automated model selection are ChatGPT-only.",
+          "Send an already prepared review through windowless Chrome. Login, verification and ZIP uploads pause for manual CLI recovery; never open a visible fallback. Browser providers: ChatGPT, DeepSeek, Claude and Gemini. No API key. Anonymous sessions work when allowed; otherwise use browser login --provider. New providers are experimental and text-only; Automated model selection is ChatGPT-only.",
         inputSchema: {
           type: "object",
           properties: {
@@ -320,28 +322,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               description:
                 "Browser provider, no API key. Gemini anonymous and DeepSeek/Claude signed-in text reviews are live-validated. Review accuracy varies; verify findings before applying changes. New adapters are experimental, text-only, using the website current/default model.",
             },
-            mode: {
-              type: "string",
-              enum: ["prefill", "submit", "auto"],
-              description:
-                "prefill opens the web UI and fills the prompt, submit also sends it, auto waits for the response and saves it when supported.",
-              default: "auto",
-            },
-            headless: {
-              type: "boolean",
-              description:
-                "Diagnostic option, requires mode=auto. Currently blocked by ChatGPT verification with and without login; use background=true for live reviews.",
-              default: false,
-            },
-            background: {
-              type: "boolean",
-              description: "Defaults true for auto mode: use a hidden page in ordinary Chrome with the bundled offscreen extension. Pause for attention; no visible fallback. Set false explicitly for visible login/verification/uploads. Requires mode=auto and headless=false. MCP reuses healthy sessions for up to 60 seconds.",
-            },
             browserProfile: {
               type: "string",
               description: "Dedicated Chrome profile path. Close its login browser before sending.",
             },
-            verificationWaitMs: { type: "integer", minimum: 0, maximum: 900000, description: "Visible mode only: wait for verification (default 180000 ms). Quiet/background and headless never wait or show a window; they return needs-attention." },
             navigationTimeoutMs: {
               type: "number", exclusiveMinimum: 0,
               description: "Timeout per initial navigation attempt in milliseconds. At most two attempts before sending.",
@@ -385,37 +369,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: TOOL_SEND_TO_CHATGPT_WEB,
         description:
-          "Compatibility alias for givi_send_to_web_llm with webProvider=chatgpt-web. This is the MCP equivalent of running `givi send --repo <repositoryPath> --mode <mode>`.",
+          "Compatibility alias for givi_send_to_web_llm with webProvider=chatgpt-web. Always windowless; visible recovery is manual CLI only.",
         inputSchema: {
           type: "object",
           properties: {
             repositoryPath: {
               type: "string",
               description:
-                "Absolute path of the repository containing a prepared GiviLoop request. Source-archive runs attach source-context.zip automatically.",
-            },
-            mode: {
-              type: "string",
-              enum: ["prefill", "submit", "auto"],
-              description:
-                "prefill opens ChatGPT and fills the prompt, submit also sends it, auto waits for the response and saves it.",
-              default: "auto",
-            },
-            headless: {
-              type: "boolean",
-              description:
-                "Diagnostic option, requires mode=auto. Currently blocked by ChatGPT verification with and without login; use background=true for live reviews.",
-              default: false,
-            },
-            background: {
-              type: "boolean",
-              description: "Defaults true for auto mode: use a hidden page in ordinary Chrome with the bundled offscreen extension. Pause for attention; no visible fallback. Set false explicitly for visible login/verification/uploads. Requires mode=auto and headless=false. MCP reuses healthy sessions for up to 60 seconds.",
+                "Absolute path of the repository containing a prepared GiviLoop request. Source-archive runs pause for manual CLI upload.",
             },
             browserProfile: {
               type: "string",
               description: "Dedicated Chrome profile path. Close its login browser before sending.",
             },
-            verificationWaitMs: { type: "integer", minimum: 0, maximum: 900000, description: "Visible mode only: wait for verification (default 180000 ms). Quiet/background and headless never wait or show a window; they return needs-attention." },
             navigationTimeoutMs: {
               type: "number", exclusiveMinimum: 0,
               description: "Timeout per initial navigation attempt in milliseconds. At most two attempts before sending.",
@@ -525,28 +491,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               description:
                 "Browser provider, no API key. Gemini anonymous and DeepSeek/Claude signed-in text reviews are live-validated. Review accuracy varies; verify findings before applying changes. New adapters are experimental, text-only, using the website current/default model.",
             },
-            mode: {
-              type: "string",
-              enum: ["prefill", "submit", "auto"],
-              description:
-                "prefill opens the web UI and fills the question, submit also sends it, auto waits for the response and saves it when supported.",
-              default: "auto",
-            },
-            headless: {
-              type: "boolean",
-              description:
-                "Diagnostic option, requires mode=auto. Currently blocked by ChatGPT verification with and without login; use background=true for live reviews.",
-              default: false,
-            },
-            background: {
-              type: "boolean",
-              description: "Defaults true for auto mode: use a hidden page in ordinary Chrome with the bundled offscreen extension. Pause for attention; no visible fallback. Set false explicitly for visible login/verification/uploads. Requires mode=auto and headless=false. MCP reuses healthy sessions for up to 60 seconds.",
-            },
             browserProfile: {
               type: "string",
               description: "Dedicated Chrome profile path. Close its login browser before sending.",
             },
-            verificationWaitMs: { type: "integer", minimum: 0, maximum: 900000, description: "Visible mode only: wait for verification (default 180000 ms). Quiet/background and headless never wait or show a window; they return needs-attention." },
             navigationTimeoutMs: {
               type: "number", exclusiveMinimum: 0,
               description: "Timeout per initial navigation attempt in milliseconds. At most two attempts before sending.",
@@ -582,12 +530,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["repositoryPath", "question"],
         },
       },
-    ],
-  };
+    ];
+  return { tools: toolProfile === "full" ? tools : tools.filter(tool => (DEFAULT_MCP_TOOLS as readonly string[]).includes(tool.name)) };
 });
 
 server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   const toolName = request.params.name;
+  if (toolName === compactReviewTool.name) return runCompactReview(request.params.arguments, extra.signal);
+  if (toolName === compactManageTool.name) return runCompactManagement(request.params.arguments, extra.signal);
   if (toolName === autoReviewTool.name) {
     const input = readObject(request.params.arguments);
     for (const key of Object.keys(input)) if (!(key in autoReviewTool.inputSchema.properties)) throw new Error(`Unsupported automatic-review argument: ${key}`);
@@ -596,13 +546,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   }
   if (toolName === "givi_release_browser_sessions") return { content: [{ type: "text", text: JSON.stringify(await browserSessions.closeIdle()) }] };
-  if (["givi_status", "givi_cancel", "givi_open", "givi_resume"].includes(toolName)) {
+  if (toolName === "givi_open") throw new Error("MCP reviews are always windowless. Ask the user to run givi open or givi browser login manually, then close Chrome before resuming.");
+  if (["givi_status", "givi_cancel", "givi_resume"].includes(toolName)) {
     const input = readObject(request.params.arguments);
+    if (toolName === "givi_resume") {
+      for (const key of Object.keys(input)) if (!["repositoryPath", "runId"].includes(key)) throw new Error(`Unsupported resume argument: ${key}. MCP resume is always windowless.`);
+    }
     const repository = readRequiredString(input, "repositoryPath"), id = readOptionalRunId(input, "runId");
     const result = toolName === "givi_status" ? runStatus(repository, id)
       : toolName === "givi_cancel" ? cancelRun(repository, id)
-      : toolName === "givi_open" ? await openRun(repository, id)
-      : await resumeRun(repository, id, readOptionalBoolean(input, "foreground"), extra.signal);
+      : await resumeRun(repository, id, false, extra.signal);
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   }
 
@@ -684,11 +637,73 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   throw new Error(`Unknown tool: ${toolName}`);
 });
 
-function readVerificationWait(input: Record<string, unknown>): number | undefined {
-  const value = input.verificationWaitMs;
-  if (value === undefined) return undefined;
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > 900000) throw new Error("verificationWaitMs must be an integer from 0 to 900000.");
-  return value;
+async function runCompactReview(value: unknown, signal?: AbortSignal) {
+  const input = readObject(value);
+  for (const key of Object.keys(input)) if (!(key in compactReviewTool.inputSchema.properties)) throw new Error(`Unsupported review argument: ${key}`);
+  const repositoryPath = path.resolve(readRequiredString(input, "repositoryPath"));
+  const question = readOptionalString(input, "question");
+  const files = readOptionalStringArray(input, "files");
+  let runId = readOptionalRunId(input, "runId");
+  if (runId && (question !== undefined || files !== undefined)) throw new Error("runId cannot be combined with question or files.");
+  if (files && !files.length) throw new Error("Select at least one file, or omit files to review Git changes.");
+  const preferences = readPreferences(repositoryPath);
+  if (!preferences || preferences.provider === "manual") throw new Error("Configure a web or local reviewer with givi setup first. Manual copy/ingest remains available through the CLI.");
+  const local = isLocalProvider(preferences.provider);
+  if (local && !preferences.model) throw new Error("Configure the local model with givi setup --provider NAME --model NAME first.");
+  if (runId) {
+    const status = runStatus(repositoryPath, runId);
+    if (status.state !== "prepared" || status.locked) throw new Error("Only an unsubmitted prepared request can be sent here. Read its status; use manage/resume for a paused review. No resend.");
+  } else if (files) {
+    const goal = question ?? "Review these files for concrete correctness bugs. Respect declared contracts and cite reproducible cases.";
+    if (local) return runLocalTool({ repositoryPath, question: goal, attachedFiles: files }, true, signal);
+    return buildWebLlmToolResponse(await askWebLlm({ repositoryPath, question: goal, attachedFiles: files,
+      webProvider: webProvider(preferences.provider), mode: "auto", reviewResponseMode: "analyze-only" }, signal));
+  } else {
+    runId = prepareExternalReview({ repositoryPath, taskGoal: question, mode: "git-only",
+      targetProvider: local ? undefined : targetForWeb(webProvider(preferences.provider)) }).runId;
+  }
+  if (local) return runLocalTool({ repositoryPath, runId }, false, signal);
+  return buildWebLlmToolResponse(await sendPreparedReviewToWebLlm({ repositoryPath, runId,
+    webProvider: webProvider(preferences.provider), mode: "auto", reviewResponseMode: "analyze-only" }, signal));
+}
+
+async function runCompactManagement(value: unknown, signal?: AbortSignal) {
+  const input = readObject(value);
+  const action = readRequiredString(input, "action");
+  const allowed: Record<string, string[]> = {
+    "release-browser": ["action"], models: ["action", "repositoryPath"],
+    cancel: ["action", "repositoryPath", "runId"],
+    resume: ["action", "repositoryPath", "runId"],
+    recheck: ["action", "repositoryPath", "runId", "findingId", "files"],
+  };
+  if (!Object.hasOwn(allowed, action)) throw new Error("Unknown review management action.");
+  for (const key of Object.keys(input)) if (!allowed[action].includes(key)) throw new Error(`Unsupported ${action} argument: ${key}`);
+  const response = (result: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] });
+  if (action === "release-browser") return response(await browserSessions.closeIdle());
+  const repository = readRequiredString(input, "repositoryPath");
+  if (action === "models") {
+    const preferences = readPreferences(repository);
+    if (!preferences || !isLocalProvider(preferences.provider)) throw new Error("Configure a local reviewer with givi setup first.");
+    return response(await probeLocalProvider(preferences.provider, preferences.baseUrl));
+  }
+  readRequiredString(input, "runId");
+  const id = readOptionalRunId(input, "runId")!;
+  return response(action === "cancel" ? cancelRun(repository, id)
+    : action === "resume" ? await resumeRun(repository, id, false, signal)
+    : prepareRecheck(repository, id, readRequiredString(input, "findingId"), readOptionalStringArray(input, "files")));
+}
+
+// Accept harmless legacy arguments, but never let a saved preference or an old
+// client opt into visible/headless sessions through any MCP entry point.
+const quietWebOptions = { mode: "auto" as const, headless: false, background: true, verificationWaitMs: 0 };
+function requireQuietWebOptions(input: Record<string, unknown>): void {
+  const mode = readWebDeliveryMode(input);
+  const headless = readOptionalBoolean(input, "headless");
+  const background = readOptionalBoolean(input, "background");
+  if ((mode && mode !== "auto") || headless === true || background === false || input.foreground !== undefined ||
+      (input.verificationWaitMs !== undefined && input.verificationWaitMs !== 0)) {
+    throw new Error("MCP reviews are always windowless (mode=auto, background=true, headless=false, verificationWaitMs=0). Login, verification and ZIP uploads require manual CLI recovery by the user.");
+  }
 }
 
 function localReviewSchema(ask: boolean) {
@@ -800,8 +815,8 @@ function buildHelpToolResponse(): {
           "",
           "Recommended IDE-agent flows:",
           "- Onboarding: run givi setup in a terminal for prerequisites, provider/login, an MCP snippet and an optional public demo.",
-          "- Setup saves per-project provider/model/profile preferences. Explicit tool arguments override them; preparing context still never sends it.",
-          "- Auto web reviews default to a hidden page in ordinary Chrome. Human attention pauses the run: inspect givi_status, use givi_open only at the user's request, finish setup and quit Chrome, then givi_resume. Uploads require foreground=true on resume.",
+          "- Setup saves per-project provider/model/profile preferences. Explicit reviewer arguments override them; MCP browser sessions are always windowless; preparing context still never sends it.",
+          "- All MCP web reviews use a hidden page in ordinary Chrome. Human attention pauses the run: inspect givi_status and ask the user to run givi open or givi browser login manually, finish setup and quit Chrome, then resume without a window. ZIP uploads require manual CLI givi resume --foreground. Never execute visible recovery commands automatically.",
           "- givi_cancel requests cooperative cancellation, without retracting submitted prompts. Resume refuses submitted, uncertain or changed requests.",
           "- Healthy background sessions are reused within this MCP process, with separate chats, up to two profiles and 60 seconds idle. givi_release_browser_sessions closes idle sessions before manual login; disconnect closes them too.",
           "- Evidence: after independent checks, use givi_record_finding with the original review runId and source/contract/test files, status, reason and evidence. Use givi_list_findings to see stale decisions. These tools record your assessment, not certified test results.",
@@ -810,7 +825,7 @@ function buildHelpToolResponse(): {
           "- First use: givi demo runs a public example and its bundled deterministic verifier; --offline is an explicitly authored illustration without a provider. Never execute code from a model response as part of a demo.",
           "",
           "1. Double Check current Git changes",
-          "- Prepare with givi_prepare_from_git, then givi_send_to_web_llm with mode=auto, background=true and the same runId.",
+          "- Prepare with givi_prepare_from_git, then givi_send_to_web_llm with the same runId.",
           "- Read with givi_read_external_review, reviewResponseMode=analyze-only and the same runId; check each finding and report confirmed, dismissed or unverified with evidence. The host agent performs this verification.",
           "",
           "2. Review a specific file or pattern",
@@ -823,15 +838,15 @@ function buildHelpToolResponse(): {
           "- Prefer git-only when the current changes provide enough context. Web token savings are not measured.",
           "",
           "Important modes:",
-          "- background=true with mode=auto runs the complete exchange in standard Chrome using a hidden page and the bundled offscreen extension. CLI: --background --mode auto.",
-          "- headless=true with mode=auto runs without a window; the provider can deny headless access. Do not combine headless and background.",
+          "- MCP always runs the complete exchange in standard Chrome using a hidden page and the bundled offscreen extension. There are no visible-browser options.",
+          "- Headless is a CLI diagnostic only; it is not supported by MCP.",
           "- For initial sign-in use givi browser login in regular Chrome, then close that dedicated browser before sending. Use givi doctor to check the profile.",
           "- modelSelection=require verifies the exact model label and its visible selection before sending. With prefer, an explicit warning reports any fallback.",
           "- After SUBMISSION_UNCERTAIN or a response timeout, inspect the conversation before retrying; the prompt may already have been sent.",
           "- analyze-only: summarize and triage the external review without editing files.",
           "- act: treat the external review as advisory, apply only sensible fixes, run checks, and report accepted/rejected suggestions.",
           "",
-          "Console equivalents:",
+          "Console equivalents (visible recovery/upload commands are for the user to run manually):",
           "- Full source archive (optional, visible upload): npm --prefix /path/to/GiviLoop run givi -- archive --repo /path/to/repo --goal \"Review the current implementation\" --send chatgpt-web --mode auto --foreground --no-untracked",
           "- Ask about one file: npm --prefix /path/to/GiviLoop run givi -- ask --repo /path/to/repo --file server.js --question \"Review this endpoint pattern\" --send chatgpt-web --mode auto",
           "- Prepare current changes: npm --prefix /path/to/GiviLoop run givi -- prepare --repo /path/to/repo --goal \"Review the current implementation\"",
@@ -915,17 +930,15 @@ function parseAgentContextPrepareArgs(value: unknown): AgentContextPrepareArgs {
 
 function parseSendToWebLlmArgs(value: unknown): SendToWebLlmArgs {
   const input = readObject(value);
+  requireQuietWebOptions(input);
 
   return {
     repositoryPath: readRequiredString(input, "repositoryPath"),
     webProvider: readWebProvider(input),
-    mode: readWebDeliveryMode(input),
+    ...quietWebOptions,
     runId: readOptionalRunId(input, "runId"),
-    headless: readOptionalBoolean(input, "headless"),
-    background: readOptionalBoolean(input, "background"),
     browserProfile: readOptionalString(input, "browserProfile"),
     navigationTimeoutMs: readOptionalPositiveNumber(input, "navigationTimeoutMs"),
-    verificationWaitMs: readVerificationWait(input),
     maxWaitMs: readOptionalPositiveNumber(input, "maxWaitMs"),
     responseStableMs: readOptionalPositiveNumber(input, "responseStableMs"),
     model: readOptionalString(input, "model"),
@@ -936,6 +949,7 @@ function parseSendToWebLlmArgs(value: unknown): SendToWebLlmArgs {
 
 function parseAskWebLlmArgs(value: unknown): AskWebLlmArgs {
   const input = readObject(value);
+  requireQuietWebOptions(input);
 
   return {
     repositoryPath: readRequiredString(input, "repositoryPath"),
@@ -947,12 +961,9 @@ function parseAskWebLlmArgs(value: unknown): AskWebLlmArgs {
       "maxTotalPackageBytes",
     ),
     webProvider: readWebProvider(input),
-    mode: readWebDeliveryMode(input),
-    headless: readOptionalBoolean(input, "headless"),
-    background: readOptionalBoolean(input, "background"),
+    ...quietWebOptions,
     browserProfile: readOptionalString(input, "browserProfile"),
     navigationTimeoutMs: readOptionalPositiveNumber(input, "navigationTimeoutMs"),
-    verificationWaitMs: readVerificationWait(input),
     maxWaitMs: readOptionalPositiveNumber(input, "maxWaitMs"),
     responseStableMs: readOptionalPositiveNumber(input, "responseStableMs"),
     model: readOptionalString(input, "model"),
@@ -986,7 +997,7 @@ async function askWebLlm(args: AskWebLlmArgs, signal?: AbortSignal): Promise<{
   const repositoryPath = path.resolve(args.repositoryPath);
   const defaults = webDefaults(repositoryPath, args.webProvider);
   args = { ...args, webProvider: defaults.provider, model: args.model ?? defaults.model, browserProfile: args.browserProfile ?? defaults.browserProfile,
-    background: args.background ?? (!args.headless && (args.mode ?? "auto") === "auto" ? defaults.background : false) };
+    ...quietWebOptions };
   const webProvider = defaults.provider;
 
   if (!existsSync(repositoryPath)) {
@@ -1085,7 +1096,7 @@ async function sendPreparedReviewToWebLlm(
   const repositoryPath = path.resolve(args.repositoryPath);
   const defaults = webDefaults(repositoryPath, args.webProvider);
   args = { ...args, webProvider: defaults.provider, model: args.model ?? defaults.model, browserProfile: args.browserProfile ?? defaults.browserProfile,
-    background: args.background ?? (!args.headless && (args.mode ?? "auto") === "auto" ? defaults.background : false) };
+    ...quietWebOptions };
   const webProvider = defaults.provider;
 
   if (!existsSync(repositoryPath)) {
@@ -1203,13 +1214,15 @@ function buildWebLlmToolResponse(result: {
             : undefined,
           `Review response handling: ${result.reviewResponseMode}`,
           `Request: ${result.requestPath}`,
+          RUN_ID_PATTERN.test(path.basename(path.dirname(result.requestPath)))
+            ? `Run ID: ${path.basename(path.dirname(result.requestPath))}` : undefined,
           result.attachmentPaths.length > 0
             ? `Attachments: ${result.attachmentPaths.join(", ")}`
             : undefined,
           result.responsePath ? `Response: ${result.responsePath}` : undefined,
           "",
           buildExternalReviewHandlingInstructions(result.reviewResponseMode),
-          "After independent verification, use givi_record_finding with the original review runId to preserve each claim, source references, reason and evidence. Use givi_list_findings to inspect stale assessments, or givi_prepare_recheck for current context. These tools record your assessment; they do not execute tests.",
+          "After independent verification, use givi_record_finding with the original review runId to preserve each claim, source references, reason and evidence. Use givi_list_findings to inspect stale assessments, or givi_manage_review with action=recheck for current context. These tools record your assessment; they do not execute tests.",
           result.responseText
             ? ["", formatUntrustedExternalReview(result.responseText)].join("\n")
             : undefined,

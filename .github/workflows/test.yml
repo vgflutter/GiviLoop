@@ -77,13 +77,13 @@ jobs:
             cat /tmp/giviloop-window-manager.log
             exit 1
           fi
-          npm run test:package -- --browser
+          npm run test:package -- --browser --foreground
           node scripts/windowless-desktop.mjs
           TEST_DESKTOP
       - name: Test the installed package on Windows
         if: runner.os == 'Windows'
         run: |
-          npm run test:package -- --browser
+          npm run test:package -- --browser --foreground
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/windowless-desktop.mjs
       - name: Keep the checked package and verification evidence
