@@ -906,6 +906,33 @@ test('native background pages have no OS window across restart, new pages and co
   }
 });
 
+test('Windows shutdown fallback closes only the owned Chrome tree and releases its profile', {timeout:45000, skip:process.platform!=='win32'}, async t=>{
+  const f=fixture(t);
+  const {launchChatBrowser}=await import(pathToFileURL(path.join(distDir,'providers/browser-runtime.js')));
+  const profile=path.join(f.root,'unresponsive-close');
+  const context=await launchChatBrowser(profile,false,true);
+  let unrelated, reopened;
+  try {
+    unrelated=await launchChatBrowser(path.join(f.root,'unrelated-browser'),false,true);
+    const browser=context.browser();
+    const newSession=browser.newBrowserCDPSession.bind(browser);
+    browser.newBrowserCDPSession=async()=>{
+      const session=await newSession(),send=session.send.bind(session);
+      // Reproduce a Chrome process which does not honor the cooperative close.
+      session.send=(method,...args)=>method==='Browser.close'?Promise.resolve({}):send(method,...args);
+      return session;
+    };
+    await Promise.all([context.close(),context.close()]);
+    assert.equal(browser.isConnected(),false);
+    assert.equal(await unrelated.pages()[0].evaluate(()=>2+2),4,'An unrelated Chrome must remain usable');
+    reopened=await launchChatBrowser(profile,false,true);
+    assert.equal(await reopened.pages()[0].evaluate(()=>3+3),6,'The owned profile must be released');
+  } finally {
+    const closed=await Promise.allSettled([context.close(),unrelated?.close(),reopened?.close()]);
+    for (const result of closed) assert.equal(result.status,'fulfilled',String(result.reason));
+  }
+});
+
 test('native background pages ignore a target closed during discovery', {timeout:30000}, async t=>{
   const f=fixture(t);
   const {launchChatBrowser,minimizeBrowser}=await import(pathToFileURL(path.join(distDir,'providers/browser-runtime.js')));

@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { chromium, type Browser, type BrowserContext, type CDPSession, type Page } from "playwright";
+import { terminateOwnedWindowsTree } from "./owned-windows-process.js";
 
 export function chromeExecutable(): string | undefined {
   const candidates = process.env.GIVILOOP_CHROME_PATH ? [process.env.GIVILOOP_CHROME_PATH]
@@ -199,8 +200,11 @@ async function launch(profile: string, background: boolean): Promise<BrowserCont
             await session.send("Browser.close");
           })().catch(() => {}), 2000);
         }
-        if (!finished && !await within(exited, 5000)) child.kill("SIGTERM");
-        if (!finished && !await within(exited, 2000)) child.kill("SIGKILL");
+        if (!finished && !await within(exited, 5000)) {
+          if (process.platform === "win32") await terminateOwnedWindowsTree(child);
+          else child.kill("SIGTERM");
+        }
+        if (process.platform !== "win32" && !finished && !await within(exited, 2000)) child.kill("SIGKILL");
         if (!finished && !await within(exited, 2000)) throw new NativeChromeError("BROWSER_CLOSE_FAILED", "The owned Chrome process did not terminate. Check givi doctor before retrying.");
         await browser?.close().catch(() => {});
       } finally {

@@ -331,21 +331,16 @@ for direct `givi auto-review enable|disable|acknowledge|run` and
 `npm run givi`, Node wrappers, and other sends including `review` and `send`.
 It does not certify findings, provider permission or token savings.
 
-The proposal pins GiviLoop commit `322deef`, which contains CLI normalization
-and shortcuts absent from this checkout's base `043f097`. The current help change
-preserves command names and behavior, but does not establish compatibility with
-all of the proposal's parsing fixtures. Before qualifying a release with Guard,
-retest its source-bound fixtures against the exact release commit and update the
-pinned reference. GiviLoop does not require Guard to work.
+GiviLoop does not require Guard. Qualifying the contribution requires fixtures
+and source references pinned to the exact supported GiviLoop commit, regenerated
+HOL artifacts and upstream approval/CI. A parser change or a passing local fixture
+suite does not make an unmerged extension available.
 
-Publication checks on 2026-09-27 repeated the PR's 184 native cases both in
-isolation and in the complete HOL catalog, its 18 native integration tests,
-generated-artifact freshness and contribution handoff. All passed on PR head
-`fc951487`. These tests inspect shell commands without executing them. Separately,
-GiviLoop's `test/hol-cli-contract.test.mjs` executes the six canonical CLI operations
-against a synthetic local reviewer, creates two reviews, rejects missing/wrong
-review IDs and verifies that finding writes and acknowledgement do not resubmit.
-Neither result makes the draft PR available: it still needs its source references
-and parser documentation aligned with this release, resolution against HOL's
-current main branch, and upstream review/CI. Do not advertise HOL integration as
-released or as protection for the MCP workflow.
+Publication checks on 2026-09-27 repeated 184 native cases in isolation and in the
+complete HOL catalog, native integration tests, generated-artifact freshness and
+contribution handoff. These inspect shell commands without executing them.
+Separately, `test/hol-cli-contract.test.mjs` executes the six canonical GiviLoop
+CLI operations against a synthetic local reviewer, creates two reviews, rejects
+missing/wrong review IDs and verifies that finding writes and acknowledgement
+do not resubmit. Neither result proves MCP coverage, website permission or
+maintainer acceptance. Check the PR for its current supported commit and status.
