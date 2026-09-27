@@ -6,6 +6,23 @@ from pathlib import Path
 import sys
 import time
 
+def current_launches(text):
+    # Windows can reuse a PID during the same test. Keep the latest launch's
+    # ordinal for each PID, so observing it cannot credit an older missed launch.
+    return {int(value): index for index, value in enumerate(text.splitlines()) if value.isdigit()}
+
+
+if sys.argv[1:] == ["--self-test"]:
+    assert current_launches("100\n200\n100\n") == {100: 2, 200: 1}
+    observed = set()
+    observed.update(current_launches("100\n").values())
+    observed.update(current_launches("100\n200\n100\n").values())
+    assert observed == {0, 1, 2}  # All launches observed, despite only two PIDs.
+    missed = set(current_launches("100\n200\n100\n").values())
+    assert len(missed) == 2  # A missed first launch must still fail coverage.
+    print("Desktop launch accounting: PID reuse and missed launch checks passed")
+    sys.exit(0)
+
 pids_file, stop_file = map(Path, sys.argv[1:3])
 
 if sys.platform == "win32":
@@ -102,16 +119,19 @@ stats = dict(platform=sys.platform, intervalMs=20, samples=0, ownedProcessSample
              observedProcessCount=0, foregroundSamples=0, maxOwnedWindows=0,
              maxOnscreenWindows=0, enumerationFailures=0, maxSampleGapMs=0)
 observed = set()
+observed_launches = set()
 previous = time.monotonic()
 print("ready", flush=True)
 while not stop_file.exists():
     now = time.monotonic()
     stats["maxSampleGapMs"] = max(stats["maxSampleGapMs"], (now - previous) * 1000)
     previous = now
-    pids = {int(value) for value in pids_file.read_text(encoding="utf8").splitlines() if value.isdigit()}
+    launches = current_launches(pids_file.read_text(encoding="utf8"))
+    pids = set(launches)
     try:
         live = {pid for pid in pids if alive(pid)}
         observed.update(live)
+        observed_launches.update(launches[pid] for pid in live)
         stats["ownedProcessSamples"] += bool(live)
         total, visible, foreground = snapshot(live)
         stats["maxOwnedWindows"] = max(stats["maxOwnedWindows"], total)
@@ -123,4 +143,5 @@ while not stop_file.exists():
     stats["samples"] += 1
     time.sleep(0.02)
 stats["observedProcessCount"] = len(observed)
+stats["observedLaunchCount"] = len(observed_launches)
 print(json.dumps(stats), flush=True)

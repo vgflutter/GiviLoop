@@ -96,13 +96,15 @@ if (values['foreground-control']) {
           const observed = await bounded(observer.done, 10000);
           assert.equal(observed.code, 0, observed.stderr);
           report[name] = JSON.parse(observed.stdout.trim().split(/\r?\n/).at(-1));
-          report[name].launchedProcessCount = readFileSync(pids, 'utf8').trim().split(/\r?\n/).filter(Boolean).length;
+          const launches = readFileSync(pids, 'utf8').trim().split(/\r?\n/).filter(Boolean);
+          report[name].launchedProcessCount = launches.length;
+          report[name].launchedUniqueProcessCount = new Set(launches).size;
         } finally { if (observer.child.exitCode === null) observer.child.kill(); }
       }
       assert.equal(report[name].enumerationFailures, 0);
       assert.ok(report[name].ownedProcessSamples > 0);
       assert.ok(report[name].observedProcessCount > 0);
-      assert.equal(report[name].observedProcessCount, report[name].launchedProcessCount, 'Every launched browser must be observed');
+      assert.equal(report[name].observedLaunchCount, report[name].launchedProcessCount, 'Every launched browser must be observed');
     }
     await phase('control', [fileURLToPath(import.meta.url), '--foreground-control']);
     assert.ok(report.control.maxOnscreenWindows > 0, 'Observer must detect the deliberately visible Chrome window');
