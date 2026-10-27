@@ -149,7 +149,7 @@ Use `givi auto-review status` to inspect configuration, or `givi auto-review dis
 
 The [`command.givi` contribution](https://github.com/hashgraph-online/hol-guard/pull/3112) was merged into HOL Guard's `main` on October 26, 2026. It adds opt-in controls for six direct CLI operations: `givi auto-review enable|disable|acknowledge|run` and `givi findings add|update`. Three permission groups separate automation configuration, review execution and finding writes.
 
-The extension must be enabled locally in Guard. It does not cover direct MCP calls, npm/Node wrappers or the ordinary automatic MCP workflow, and it does not verify finding evidence. See the [upstream coverage definition](https://github.com/hashgraph-online/hol-guard/blob/main/contributions/extensions/command.givi.json). As checked on October 27, 2026, the latest stable Guard release, `v3.57.0`, predates this merge; inclusion in a stable release is not yet confirmed.
+The extension must be enabled locally in Guard. It does not cover direct MCP calls, npm/Node wrappers or the ordinary automatic MCP workflow, and it does not verify finding evidence. See the [upstream coverage definition](https://github.com/hashgraph-online/hol-guard/blob/main/contributions/extensions/command.givi.json).
 
 ## Install, learn, contribute
 
